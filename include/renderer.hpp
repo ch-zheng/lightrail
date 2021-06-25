@@ -10,7 +10,7 @@ namespace lightrail {
 		vk::PhysicalDevice physical_device;
 		size_t graphics_queue_family, present_queue_family;
 		vk::Device device;
-		vk::Queue graphics_queue;
+		vk::Queue graphics_queue, present_queue;
 		vk::CommandPool command_pool;
 		vk::CommandBuffer command_buffer;
 		public:

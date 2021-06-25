@@ -61,19 +61,24 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	if (!device_found) throw std::runtime_error("No graphics device found");
 
 	//Queues & Logical device
-	//TODO: Present queue
-	float queue_priorities[] = {0.0f};
-	vk::DeviceQueueCreateInfo queue_create_info(
-		{}, graphics_queue_family, 1, queue_priorities
-	);
-	//TODO: Use better overload
+	float queue_priority = 0.0f;
+	std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
+	if (graphics_queue_family == present_queue_family) {
+		queue_create_infos = {
+			vk::DeviceQueueCreateInfo({}, graphics_queue_family, 1, &queue_priority),
+		};
+	} else {
+		queue_create_infos = {
+			vk::DeviceQueueCreateInfo({}, graphics_queue_family, 1, &queue_priority),
+			vk::DeviceQueueCreateInfo({}, present_queue_family, 1, &queue_priority),
+		};
+	}
+	//TODO: Swapchain extension
 	device = physical_device.createDevice(vk::DeviceCreateInfo(
-		{},
-		1, &queue_create_info,
-		layers.size(), layers.data(),
-		1, nullptr
+		{}, queue_create_infos, {}, extensions, {}
 	));
 	graphics_queue = device.getQueue(graphics_queue_family, 0);
+	present_queue = device.getQueue(present_queue_family, 0);
 	//Command pool
 	command_pool = device.createCommandPool(
 		vk::CommandPoolCreateInfo({}, graphics_queue_family)
