@@ -4,6 +4,7 @@
 
 namespace lightrail {
 	class Renderer {
+		//Members
 		SDL_Window* window;
 		vk::Instance instance;
 		vk::SurfaceKHR surface;
@@ -13,9 +14,16 @@ namespace lightrail {
 		vk::Queue graphics_queue, present_queue;
 		vk::CommandPool command_pool;
 		vk::CommandBuffer command_buffer;
+		vk::SwapchainKHR swapchain;
+		std::vector<vk::Image> images;
+		std::vector<vk::ImageView> image_views;
+		vk::Pipeline pipeline;
+		//Methods
+		void create_swapchain(bool);
+		void create_pipeline();
+		vk::ShaderModule create_shader_module(std::string);
 		public:
 		Renderer(SDL_Window*);
 		~Renderer();
-		vk::SwapchainKHR create_swapchain();
 	};
 }

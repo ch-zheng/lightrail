@@ -1,6 +1,7 @@
 #include "vk_mem_alloc.h"
 #include "renderer.hpp"
 //#include <iostream>
+#include <fstream>
 using namespace lightrail;
 
 Renderer::Renderer(SDL_Window *window) : window(window) {
@@ -73,9 +74,9 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 			vk::DeviceQueueCreateInfo({}, present_queue_family, 1, &queue_priority),
 		};
 	}
-	//TODO: Swapchain extension
+	std::vector<char const*> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 	device = physical_device.createDevice(vk::DeviceCreateInfo(
-		{}, queue_create_infos, {}, extensions, {}
+		{}, queue_create_infos, {}, device_extensions, {}
 	));
 	graphics_queue = device.getQueue(graphics_queue_family, 0);
 	present_queue = device.getQueue(present_queue_family, 0);
@@ -93,13 +94,91 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	).front();
 }
 
-vk::SwapchainKHR Renderer::create_swapchain() {
+void Renderer::create_swapchain(bool refresh) {
+	auto surface_capabilities =
+		physical_device.getSurfaceCapabilitiesKHR(surface);
+	auto formats = physical_device.getSurfaceFormatsKHR(surface);
+	vk::SurfaceFormatKHR image_format = formats.front();
+	//TODO: Preferred format/colorspace?
+	for (const auto& format : formats) {
+		if (format.format == vk::Format::eB8G8R8A8Srgb
+			&& format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+			image_format = format;
+			break;
+		}
+	}
+	//TODO: Image extent refinement
+	//Create swapchain
+	auto new_swapchain = device.createSwapchainKHR(vk::SwapchainCreateInfoKHR(
+		{},
+		surface,
+		surface_capabilities.minImageCount,
+		image_format.format,
+		image_format.colorSpace,
+		surface_capabilities.currentExtent,
+		1,
+		vk::ImageUsageFlagBits::eColorAttachment,
+		vk::SharingMode::eExclusive,
+		{},
+		surface_capabilities.currentTransform,
+		vk::CompositeAlphaFlagBitsKHR::eOpaque,
+		vk::PresentModeKHR::eFifo,
+		true,
+		refresh ? swapchain : nullptr
+	));
+	//Free old swapchain resources
+	if (refresh) {
+		for (auto image_view : image_views)
+			device.destroyImageView(image_view);
+		device.destroySwapchainKHR(swapchain);
+	}
+	//Create swapchain resources
+	swapchain = new_swapchain;
+	images = device.getSwapchainImagesKHR(swapchain);
+	image_views = std::vector<vk::ImageView>(images.size());
+	vk::ComponentMapping component_mapping(
+		vk::ComponentSwizzle::eR,
+		vk::ComponentSwizzle::eG,
+		vk::ComponentSwizzle::eB,
+		vk::ComponentSwizzle::eA
+	);
+	vk::ImageSubresourceRange subresource_range(
+		vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1
+	);
+	for (auto image : images) {
+		image_views.push_back(device.createImageView(vk::ImageViewCreateInfo(
+			{},
+			image,
+			vk::ImageViewType::e2D,
+			image_format.format,
+			component_mapping,
+			subresource_range
+		)));
+	}
+}
 
-	vk::SwapchainKHR result;
-	return result;
+void Renderer::create_pipeline() {
+	//Shaders
+}
+
+vk::ShaderModule Renderer::create_shader_module(std::string filename) {
+	//Read shader file
+	std::ifstream shader_file(filename, std::ifstream::ate|std::ifstream::binary);
+	size_t file_size = shader_file.tellg();
+	std::vector<char> buffer(file_size);
+	shader_file.seekg(0);
+	shader_file.read(buffer.data(), file_size);
+	shader_file.close();
+	//Create shader module
+	return device.createShaderModule(vk::ShaderModuleCreateInfo(
+		{}, file_size, reinterpret_cast<const uint32_t*>(buffer.data())
+	));
 }
 
 Renderer::~Renderer() {
+	for (auto image_view : image_views)
+		device.destroyImageView(image_view);
+	device.destroySwapchainKHR(swapchain);
 	device.freeCommandBuffers(command_pool, command_buffer);
 	device.destroyCommandPool(command_pool);
 	device.destroy();
