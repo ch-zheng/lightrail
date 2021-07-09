@@ -7,8 +7,8 @@
 namespace lightrail {
 	class App {
 		SDL_Window *window;
-		std::unique_ptr<lightrail::Renderer> renderer;
 		public:
+		std::unique_ptr<lightrail::Renderer> renderer;
 		App();
 		~App();
 	};
