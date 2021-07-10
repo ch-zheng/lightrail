@@ -13,18 +13,16 @@ namespace lightrail {
 		vk::Queue graphics_queue, present_queue;
 		vk::CommandPool command_pool;
 		vk::CommandBuffer command_buffer;
+		vk::Semaphore image_available_semaphore, render_finished_semaphore;
 
 		//Swapchain & dependencies
 		vk::Extent2D surface_extent;
 		vk::SwapchainKHR swapchain;
-		std::vector<vk::Image> images;
 		std::vector<vk::ImageView> image_views;
 		vk::RenderPass render_pass;
 		vk::PipelineLayout pipeline_layout;
 		std::vector<vk::Pipeline> pipelines;
 		std::vector<vk::Framebuffer> framebuffers;
-
-		vk::Semaphore image_available_semaphore, render_finished_semaphore;
 
 		void create_swapchain();
 		void destroy_swapchain();

@@ -2,7 +2,7 @@
 #include "renderer.hpp"
 #include <algorithm>
 #include <fstream>
-#include <iostream> //FIXME
+//#include <iostream> //FIXME
 using namespace lightrail;
 
 Renderer::Renderer(SDL_Window *window) : window(window) {
@@ -14,11 +14,10 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	//FIXME: Validation layer
 	std::array<const char*, 1> layers {"VK_LAYER_KHRONOS_validation"};
 	//Extensions
-	std::vector<const char*> extensions;
 	uint32_t ext_count;
 	if (!SDL_Vulkan_GetInstanceExtensions(window, &ext_count, nullptr))
 		throw std::runtime_error("Error counting Vulkan instance extensions");
-	extensions.reserve(ext_count);
+	std::vector<const char*> extensions(ext_count);
 	if (!SDL_Vulkan_GetInstanceExtensions(window, &ext_count, extensions.data()))
 		throw std::runtime_error("Error getting Vulkan instance extensions");
 	instance = vk::createInstance(vk::InstanceCreateInfo(
@@ -96,12 +95,11 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 			1
 		)
 	).front();
-
-	//Swapchain
-	create_swapchain();
 	//Semaphores
 	image_available_semaphore = device.createSemaphore({});
 	render_finished_semaphore = device.createSemaphore({});
+	//Swapchain
+	create_swapchain();
 }
 
 void Renderer::create_swapchain() {
@@ -167,7 +165,7 @@ void Renderer::create_swapchain() {
 	swapchain = new_swapchain;
 
 	//Images & image views
-	images = device.getSwapchainImagesKHR(swapchain);
+	auto images = device.getSwapchainImagesKHR(swapchain);
 	image_views.reserve(images.size());
 	vk::ComponentMapping component_mapping(
 		vk::ComponentSwizzle::eIdentity,
@@ -191,7 +189,7 @@ void Renderer::create_swapchain() {
 	}
 
 	//Render pass
-	vk::AttachmentDescription attachment_descriptions(
+	vk::AttachmentDescription attachments(
 		{},
 		surface_format.format,
 		vk::SampleCountFlagBits::e1,
@@ -203,15 +201,15 @@ void Renderer::create_swapchain() {
 		vk::ImageLayout::ePresentSrcKHR
 	);
 	vk::AttachmentReference color_attachments(0, vk::ImageLayout::eAttachmentOptimalKHR);
-	vk::SubpassDescription subpass_descriptions(
+	vk::SubpassDescription subpasses(
 		{},
 		vk::PipelineBindPoint::eGraphics,
 		{}, color_attachments, {}, {}, {}
 	);
 	render_pass = device.createRenderPass(vk::RenderPassCreateInfo(
 		{},
-		attachment_descriptions,
-		subpass_descriptions,
+		attachments,
+		subpasses,
 		{}
 	));
 
@@ -236,11 +234,14 @@ void Renderer::destroy_swapchain() {
 	device.destroyPipelineLayout(pipeline_layout);
 	for (auto pipeline : pipelines)
 		device.destroyPipeline(pipeline);
+	pipelines.clear();
 	for (auto framebuffer : framebuffers)
 		device.destroyFramebuffer(framebuffer);
+	framebuffers.clear();
 	device.destroyRenderPass(render_pass);
 	for (auto image_view : image_views)
 		device.destroyImageView(image_view);
+	image_views.clear();
 	device.destroySwapchainKHR(swapchain);
 }
 
@@ -289,7 +290,7 @@ void Renderer::create_pipelines() {
 		false,
 		false,
 		vk::PolygonMode::eFill,
-		vk::CullModeFlagBits::eNone, vk::FrontFace::eCounterClockwise,
+		vk::CullModeFlagBits::eBack, vk::FrontFace::eCounterClockwise,
 		false, 0.0f, 0.0f, 0.0f,
 		1.0f
 	);
@@ -312,7 +313,11 @@ void Renderer::create_pipelines() {
 		vk::BlendOp::eAdd,
 		vk::BlendFactor::eOne,
 		vk::BlendFactor::eZero,
-		vk::BlendOp::eAdd
+		vk::BlendOp::eAdd,
+		vk::ColorComponentFlagBits::eR
+		| vk::ColorComponentFlagBits::eG
+		| vk::ColorComponentFlagBits::eB
+		| vk::ColorComponentFlagBits::eA
 	);
 	vk::PipelineColorBlendStateCreateInfo color_blend(
 		{},
@@ -355,8 +360,7 @@ vk::ShaderModule Renderer::create_shader_module(std::string filename) {
 	//Read shader file
 	std::ifstream shader_file(filename, std::ifstream::ate|std::ifstream::binary);
 	size_t file_size = shader_file.tellg();
-	std::vector<char> buffer;
-	buffer.reserve(file_size);
+	std::vector<char> buffer(file_size);
 	shader_file.seekg(0);
 	shader_file.read(buffer.data(), file_size);
 	shader_file.close();
@@ -394,16 +398,22 @@ void Renderer::draw() {
 		command_buffer,
 		render_finished_semaphore
 	), nullptr);
-	auto present_result = present_queue.presentKHR(vk::PresentInfoKHR(
-		render_finished_semaphore, swapchain, image_index, nullptr
-	));
+	try {
+		auto present_result = present_queue.presentKHR(vk::PresentInfoKHR(
+			render_finished_semaphore, swapchain, image_index
+		));
+	} catch (const vk::OutOfDateKHRError& error) {
+		present_queue.waitIdle();
+		create_swapchain();
+	}
 	present_queue.waitIdle();
 }
 
 Renderer::~Renderer() {
+	device.waitIdle();
+	destroy_swapchain();
 	device.destroySemaphore(image_available_semaphore);
 	device.destroySemaphore(render_finished_semaphore);
-	destroy_swapchain();
 	device.freeCommandBuffers(command_pool, command_buffer);
 	device.destroyCommandPool(command_pool);
 	device.destroy();
