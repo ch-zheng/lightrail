@@ -4,6 +4,8 @@
 
 namespace lightrail {
 	class Renderer {
+		const std::string PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
+
 		SDL_Window* window;
 		vk::Instance instance;
 		vk::SurfaceKHR surface;
@@ -14,6 +16,7 @@ namespace lightrail {
 		vk::CommandPool command_pool;
 		vk::CommandBuffer command_buffer;
 		vk::Semaphore image_available_semaphore, render_finished_semaphore;
+		vk::PipelineCache pipeline_cache;
 
 		//Swapchain & dependencies
 		vk::Extent2D surface_extent;

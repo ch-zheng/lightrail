@@ -2,7 +2,7 @@
 #include "renderer.hpp"
 #include <algorithm>
 #include <fstream>
-//#include <iostream> //FIXME
+#include <iostream> //FIXME
 using namespace lightrail;
 
 Renderer::Renderer(SDL_Window *window) : window(window) {
@@ -98,6 +98,34 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	//Semaphores
 	image_available_semaphore = device.createSemaphore({});
 	render_finished_semaphore = device.createSemaphore({});
+	//Pipeline cache
+	std::ifstream pipeline_cache_file(
+		PIPELINE_CACHE_FILENAME,
+		std::ifstream::ate|std::ifstream::binary
+	);
+	if (pipeline_cache_file.good()) {
+		size_t file_size = pipeline_cache_file.tellg();
+		std::vector<char> buffer(file_size);
+		pipeline_cache_file.seekg(0);
+		pipeline_cache_file.read(buffer.data(), file_size);
+		pipeline_cache = device.createPipelineCache(
+			vk::PipelineCacheCreateInfo(
+				{},
+				file_size,
+				buffer.data()
+			)
+		);
+	} else {
+		pipeline_cache = device.createPipelineCache(
+			vk::PipelineCacheCreateInfo(
+				{},
+				0,
+				nullptr
+			)
+		);
+	}
+	pipeline_cache_file.close();
+
 	//Swapchain
 	create_swapchain();
 }
@@ -349,7 +377,7 @@ void Renderer::create_pipelines() {
 		render_pass, 0,
 		{}, {}
 	);
-	pipelines = device.createGraphicsPipelines({}, pipeline_create_infos).value;
+	pipelines = device.createGraphicsPipelines(pipeline_cache, pipeline_create_infos).value;
 
 	//Cleanup
 	device.destroyShaderModule(vertex_shader);
@@ -411,7 +439,17 @@ void Renderer::draw() {
 
 Renderer::~Renderer() {
 	device.waitIdle();
+	//Save pipeline cache
+	std::ofstream pipeline_cache_file(PIPELINE_CACHE_FILENAME, std::ofstream::binary);
+	auto pipeline_cache_data = device.getPipelineCacheData(pipeline_cache);
+	pipeline_cache_file.write(
+		reinterpret_cast<const char*>(pipeline_cache_data.data()),
+		sizeof(uint8_t) * pipeline_cache_data.size()
+	);
+	pipeline_cache_file.close();
+	//Destructors
 	destroy_swapchain();
+	device.destroyPipelineCache(pipeline_cache);
 	device.destroySemaphore(image_available_semaphore);
 	device.destroySemaphore(render_finished_semaphore);
 	device.freeCommandBuffers(command_pool, command_buffer);
