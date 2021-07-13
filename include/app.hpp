@@ -2,7 +2,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <SDL2/SDL.h>
-#include  "renderer.hpp"
+#include "renderer.hpp"
 
 namespace lightrail {
 	class App {

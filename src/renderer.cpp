@@ -1,8 +1,9 @@
-#include "vk_mem_alloc.h"
+#define VMA_IMPLEMENTATION
 #include "renderer.hpp"
 #include <algorithm>
+//#include <future>
 #include <fstream>
-#include <iostream> //FIXME
+#include <iostream>
 using namespace lightrail;
 
 Renderer::Renderer(SDL_Window *window) : window(window) {
@@ -126,11 +127,85 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	}
 	pipeline_cache_file.close();
 
+	//Render data
+	const std::array<Vertex, 3> vertices {
+		Vertex{{0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}},
+		Vertex{{0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+		Vertex{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+	};
+
+	//Memory structures
+	//Allocator
+	VmaAllocatorCreateInfo allocator_create_info {};
+	allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_2;
+	allocator_create_info.instance = instance;
+	allocator_create_info.physicalDevice = physical_device;
+	allocator_create_info.device = device;
+	vmaCreateAllocator(&allocator_create_info, &allocator);
+	//Vertex buffer
+	auto vertex_data_size = sizeof(Vertex) * vertices.size();
+	vk::BufferCreateInfo vertex_buffer_create_info(
+		{},
+		vertex_data_size,
+		vk::BufferUsageFlagBits::eVertexBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
+	);
+	VmaAllocationCreateInfo vertex_alloc_create_info {};
+	vertex_alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+	vmaCreateBuffer(
+		allocator,
+		reinterpret_cast<VkBufferCreateInfo*>(&vertex_buffer_create_info),
+		&vertex_alloc_create_info,
+		reinterpret_cast<VkBuffer*>(&vertex_buffer),
+		&vertex_alloc,
+		nullptr
+	);
+	//Staging buffer
+	vk::Buffer staging_buffer;
+	VmaAllocation staging_alloc;
+	vk::BufferCreateInfo staging_buffer_create_info(
+		{},
+		vertex_data_size,
+		vk::BufferUsageFlagBits::eTransferSrc
+	);
+	VmaAllocationCreateInfo staging_alloc_create_info {};
+	staging_alloc_create_info.requiredFlags
+		= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+		| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	vmaCreateBuffer(
+		allocator,
+		reinterpret_cast<VkBufferCreateInfo*>(&staging_buffer_create_info),
+		&staging_alloc_create_info,
+		reinterpret_cast<VkBuffer*>(&staging_buffer),
+		&staging_alloc,
+		nullptr
+	);
+	//Fill staging buffer
+	void *staging_data;
+	vmaMapMemory(allocator, staging_alloc, &staging_data);
+	std::memcpy(staging_data, vertices.data(), vertex_data_size); 
+	vmaUnmapMemory(allocator, staging_alloc);
+	//Staging transfer
+	command_buffer.begin(vk::CommandBufferBeginInfo(
+		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+	));
+	command_buffer.copyBuffer(
+		staging_buffer,
+		vertex_buffer,
+		vk::BufferCopy(0, 0, vertex_data_size)
+	);
+	command_buffer.end();
+	graphics_queue.submit(vk::SubmitInfo({}, {}, command_buffer));
+	graphics_queue.waitIdle();
+	//Cleanup
+	vmaDestroyBuffer(allocator, staging_buffer, staging_alloc);
+
 	//Swapchain
 	create_swapchain();
 }
 
 void Renderer::create_swapchain() {
+	device.waitIdle();
 	//Surface capabilities
 	auto surface_capabilities =
 		physical_device.getSurfaceCapabilitiesKHR(surface);
@@ -295,7 +370,24 @@ void Renderer::create_pipelines() {
 
 	//Fixed functions
 	//Vertex input
-	vk::PipelineVertexInputStateCreateInfo vertex_input({}, {}, {});
+	vk::VertexInputBindingDescription binding_descriptions(0, sizeof(Vertex));
+	std::array<vk::VertexInputAttributeDescription, 2> attribute_descriptions {
+		vk::VertexInputAttributeDescription(
+			0,
+			0,
+			vk::Format::eR32G32Sfloat,
+			offsetof(Vertex, position)
+		),
+		vk::VertexInputAttributeDescription(
+			1,
+			0,
+			vk::Format::eR32G32B32Sfloat,
+			offsetof(Vertex, color)
+		),
+	};
+	vk::PipelineVertexInputStateCreateInfo vertex_input(
+		{}, binding_descriptions, attribute_descriptions
+	);
 	//Input assembly
 	vk::PipelineInputAssemblyStateCreateInfo input_assembly(
 		{}, vk::PrimitiveTopology::eTriangleList, false
@@ -404,8 +496,7 @@ void Renderer::draw() {
 	).value;
 	//Record command buffer
 	command_buffer.begin(vk::CommandBufferBeginInfo(
-		vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
-		nullptr
+		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
 	));
 	vk::ClearValue clear_values(std::array<float, 4> {0.0f, 0.0f, 0.0f, 1.0f});
 	command_buffer.beginRenderPass(vk::RenderPassBeginInfo(
@@ -415,6 +506,7 @@ void Renderer::draw() {
 		clear_values
 	), vk::SubpassContents::eInline);
 	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[0]);
+	command_buffer.bindVertexBuffers(0, vertex_buffer, {0});
 	command_buffer.draw(3, 1, 0, 0);
 	command_buffer.endRenderPass();
 	command_buffer.end();
@@ -439,6 +531,9 @@ void Renderer::draw() {
 
 Renderer::~Renderer() {
 	device.waitIdle();
+	//Memory structures
+	vmaDestroyBuffer(allocator, vertex_buffer, vertex_alloc);
+	vmaDestroyAllocator(allocator);
 	//Save pipeline cache
 	std::ofstream pipeline_cache_file(PIPELINE_CACHE_FILENAME, std::ofstream::binary);
 	auto pipeline_cache_data = device.getPipelineCacheData(pipeline_cache);
