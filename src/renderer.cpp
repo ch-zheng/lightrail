@@ -128,11 +128,13 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	pipeline_cache_file.close();
 
 	//Render data
-	const std::array<Vertex, 3> vertices {
+	const std::array<Vertex, 4> vertices {
 		Vertex{{0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}},
-		Vertex{{0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-		Vertex{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+		Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+		Vertex{{-0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
+		Vertex{{-0.5f, 0.5f}, {0.5f, 0.5f, 0.0f}}
 	};
+	const std::array<uint16_t, 6> indices {0, 1, 2, 0, 2, 3};
 
 	//Memory structures
 	//Allocator
@@ -143,62 +145,33 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	allocator_create_info.device = device;
 	vmaCreateAllocator(&allocator_create_info, &allocator);
 	//Vertex buffer
-	auto vertex_data_size = sizeof(Vertex) * vertices.size();
 	vk::BufferCreateInfo vertex_buffer_create_info(
 		{},
-		vertex_data_size,
+		sizeof(Vertex) * vertices.size(),
 		vk::BufferUsageFlagBits::eVertexBuffer
 		| vk::BufferUsageFlagBits::eTransferDst
 	);
 	VmaAllocationCreateInfo vertex_alloc_create_info {};
-	vertex_alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-	vmaCreateBuffer(
-		allocator,
-		reinterpret_cast<VkBufferCreateInfo*>(&vertex_buffer_create_info),
-		&vertex_alloc_create_info,
-		reinterpret_cast<VkBuffer*>(&vertex_buffer),
-		&vertex_alloc,
-		nullptr
-	);
-	//Staging buffer
-	vk::Buffer staging_buffer;
-	VmaAllocation staging_alloc;
-	vk::BufferCreateInfo staging_buffer_create_info(
-		{},
-		vertex_data_size,
-		vk::BufferUsageFlagBits::eTransferSrc
-	);
-	VmaAllocationCreateInfo staging_alloc_create_info {};
-	staging_alloc_create_info.requiredFlags
-		= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-		| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	vmaCreateBuffer(
-		allocator,
-		reinterpret_cast<VkBufferCreateInfo*>(&staging_buffer_create_info),
-		&staging_alloc_create_info,
-		reinterpret_cast<VkBuffer*>(&staging_buffer),
-		&staging_alloc,
-		nullptr
-	);
-	//Fill staging buffer
-	void *staging_data;
-	vmaMapMemory(allocator, staging_alloc, &staging_data);
-	std::memcpy(staging_data, vertices.data(), vertex_data_size); 
-	vmaUnmapMemory(allocator, staging_alloc);
-	//Staging transfer
-	command_buffer.begin(vk::CommandBufferBeginInfo(
-		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+	vertex_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	vertex_buffer = std::unique_ptr<BufferWrapper>(new BufferWrapper(
+		device, allocator,
+		vertex_buffer_create_info, vertex_alloc_create_info
 	));
-	command_buffer.copyBuffer(
-		staging_buffer,
-		vertex_buffer,
-		vk::BufferCopy(0, 0, vertex_data_size)
+	vertex_buffer->staged_write(vertices.data(), command_buffer, graphics_queue);
+	//Index buffer
+	vk::BufferCreateInfo index_buffer_create_info(
+		{},
+		sizeof(uint16_t) * indices.size(),
+		vk::BufferUsageFlagBits::eIndexBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
 	);
-	command_buffer.end();
-	graphics_queue.submit(vk::SubmitInfo({}, {}, command_buffer));
-	graphics_queue.waitIdle();
-	//Cleanup
-	vmaDestroyBuffer(allocator, staging_buffer, staging_alloc);
+	VmaAllocationCreateInfo index_alloc_create_info {};
+	index_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	index_buffer = std::unique_ptr<BufferWrapper>(new BufferWrapper(
+		device, allocator,
+		index_buffer_create_info, index_alloc_create_info
+	));
+	index_buffer->staged_write(indices.data(), command_buffer, graphics_queue);
 
 	//Swapchain
 	create_swapchain();
@@ -506,8 +479,9 @@ void Renderer::draw() {
 		clear_values
 	), vk::SubpassContents::eInline);
 	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[0]);
-	command_buffer.bindVertexBuffers(0, vertex_buffer, {0});
-	command_buffer.draw(3, 1, 0, 0);
+	command_buffer.bindVertexBuffers(0, vertex_buffer->get_buf(), {0});
+	command_buffer.bindIndexBuffer(index_buffer->get_buf(), 0, vk::IndexType::eUint16);
+	command_buffer.drawIndexed(6, 1, 0, 0, 0);
 	command_buffer.endRenderPass();
 	command_buffer.end();
 	//Submit & present
@@ -526,13 +500,18 @@ void Renderer::draw() {
 		present_queue.waitIdle();
 		create_swapchain();
 	}
+}
+
+void Renderer::wait() {
+	//FIXME: This is stupid
 	present_queue.waitIdle();
 }
 
 Renderer::~Renderer() {
 	device.waitIdle();
 	//Memory structures
-	vmaDestroyBuffer(allocator, vertex_buffer, vertex_alloc);
+	index_buffer->destroy();
+	vertex_buffer->destroy();
 	vmaDestroyAllocator(allocator);
 	//Save pipeline cache
 	std::ofstream pipeline_cache_file(PIPELINE_CACHE_FILENAME, std::ofstream::binary);

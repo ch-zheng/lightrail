@@ -9,6 +9,7 @@ target_sources(
 	src/main.cpp
 	src/app.cpp
 	src/renderer.cpp
+	src/render-utils.cpp
 )
 target_link_libraries(lightrail SDL2 vulkan)
 

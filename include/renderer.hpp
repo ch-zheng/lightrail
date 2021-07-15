@@ -1,9 +1,8 @@
 #pragma once
+#include "render-utils.hpp"
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL2/SDL_vulkan.h>
-#include <glm/vec2.hpp>
-#include <glm/vec3.hpp>
 
 namespace lightrail {
 	class Renderer {
@@ -23,8 +22,8 @@ namespace lightrail {
 		
 		//Memory structures
 		VmaAllocator allocator;
-		vk::Buffer vertex_buffer;
-		VmaAllocation vertex_alloc;
+		std::unique_ptr<BufferWrapper> vertex_buffer;
+		std::unique_ptr<BufferWrapper> index_buffer;
 
 		//Swapchain & dependencies
 		vk::Extent2D surface_extent;
@@ -37,18 +36,15 @@ namespace lightrail {
 
 		void create_swapchain();
 		void destroy_swapchain();
-		//Pipelines
 		void create_pipelines();
 		vk::ShaderModule create_shader_module(std::string);
+		BufferWrapper create_buffer_wrapper(vk::BufferCreateInfo&, VmaAllocationCreateInfo&);
 
 		public:
+		Renderer() = default;
 		Renderer(SDL_Window*);
 		void draw();
+		void wait();
 		~Renderer();
-	};
-
-	struct Vertex {
-		glm::vec2 position;
-		glm::vec3 color;
 	};
 }

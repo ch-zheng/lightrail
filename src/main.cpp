@@ -20,5 +20,6 @@ int main() {
 		}
 		//Rendering
 		app.renderer->draw();
+		app.renderer->wait();
 	}
 }
