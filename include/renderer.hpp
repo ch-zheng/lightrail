@@ -3,6 +3,7 @@
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL2/SDL_vulkan.h>
+#include <glm/mat4x4.hpp>
 
 namespace lightrail {
 	class Renderer {
@@ -24,6 +25,7 @@ namespace lightrail {
 		VmaAllocator allocator;
 		std::unique_ptr<BufferWrapper> vertex_buffer;
 		std::unique_ptr<BufferWrapper> index_buffer;
+		glm::mat4 projection_matrix = glm::mat4(1.0f);
 
 		//Swapchain & dependencies
 		vk::Extent2D surface_extent;

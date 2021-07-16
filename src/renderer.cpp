@@ -1,5 +1,6 @@
 #define VMA_IMPLEMENTATION
 #include "renderer.hpp"
+#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 //#include <future>
 #include <fstream>
@@ -420,9 +421,14 @@ void Renderer::create_pipelines() {
 		{0.0f, 0.0f, 0.0f, 0.0f}
 	);
 	//TODO: Dynamic state?
-	//TODO: Descriptor sets
+	//Layout
+	vk::PushConstantRange projection_constant(
+		vk::ShaderStageFlagBits::eVertex,
+		0,
+		sizeof(glm::mat4)
+	);
 	pipeline_layout = device.createPipelineLayout(vk::PipelineLayoutCreateInfo(
-		{}, {}, {}
+		{}, {}, projection_constant
 	));
 
 	//Create pipeline
@@ -467,6 +473,8 @@ void Renderer::draw() {
 	uint32_t image_index = device.acquireNextImageKHR(
 		swapchain, UINT64_MAX, image_available_semaphore, nullptr
 	).value;
+	//Update models
+	projection_matrix = glm::rotate(projection_matrix, 0.01f, glm::vec3(0.0f, 0.0f, 1.0f));
 	//Record command buffer
 	command_buffer.begin(vk::CommandBufferBeginInfo(
 		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
@@ -481,6 +489,12 @@ void Renderer::draw() {
 	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[0]);
 	command_buffer.bindVertexBuffers(0, vertex_buffer->get_buf(), {0});
 	command_buffer.bindIndexBuffer(index_buffer->get_buf(), 0, vk::IndexType::eUint16);
+	command_buffer.pushConstants(
+		pipeline_layout,
+		vk::ShaderStageFlagBits::eVertex,
+		0,
+		vk::ArrayProxy<const glm::mat4>(projection_matrix)
+	);
 	command_buffer.drawIndexed(6, 1, 0, 0, 0);
 	command_buffer.endRenderPass();
 	command_buffer.end();

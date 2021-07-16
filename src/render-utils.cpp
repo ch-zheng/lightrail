@@ -17,7 +17,7 @@ BufferWrapper::BufferWrapper(
 	);
 };
 
-void BufferWrapper::write(const void *data) {
+void BufferWrapper::write(const void* data) {
 	//TODO: Flushing
 	void *buffer_data;
 	vmaMapMemory(allocator, alloc, &buffer_data);
@@ -26,7 +26,7 @@ void BufferWrapper::write(const void *data) {
 }
 
 void BufferWrapper::staged_write(
-	const void *data,
+	const void* data,
 	const vk::CommandBuffer& command_buffer,
 	const vk::Queue& queue) {
 	//Create staging buffer
