@@ -10,6 +10,7 @@ namespace lightrail {
 		public:
 		std::unique_ptr<lightrail::Renderer> renderer;
 		App();
+		SDL_Window* get_window() {return window;}
 		~App();
 	};
 }
