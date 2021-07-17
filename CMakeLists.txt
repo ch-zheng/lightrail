@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.19)
 project(Lightrail VERSION 1.0 DESCRIPTION "Lightweight game engine")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 add_executable(lightrail)
 target_include_directories(lightrail PUBLIC ./include)
 target_sources(
@@ -11,7 +12,7 @@ target_sources(
 	src/renderer.cpp
 	src/render-utils.cpp
 )
-target_link_libraries(lightrail SDL2 vulkan)
+target_link_libraries(lightrail SDL2 vulkan Eigen3::Eigen)
 
 # Shaders
 set(

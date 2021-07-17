@@ -1,8 +1,6 @@
 #pragma once
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
-#include <glm/vec2.hpp>
-#include <glm/vec3.hpp>
 
 namespace lightrail {
 	class BufferWrapper {
@@ -23,7 +21,7 @@ namespace lightrail {
 	};
 
 	struct Vertex {
-		glm::vec2 position;
-		glm::vec3 color;
+		std::array<float, 2> position;
+		std::array<float, 3> color;
 	};
 }

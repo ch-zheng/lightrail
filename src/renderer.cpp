@@ -1,6 +1,5 @@
 #define VMA_IMPLEMENTATION
 #include "renderer.hpp"
-#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 //#include <future>
 #include <fstream>
@@ -136,6 +135,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 		Vertex{{-0.5f, 0.5f}, {0.5f, 0.5f, 0.0f}}
 	};
 	const std::array<uint16_t, 6> indices {0, 1, 2, 0, 2, 3};
+	projection.setIdentity();
 
 	//Memory structures
 	//Allocator
@@ -425,7 +425,7 @@ void Renderer::create_pipelines() {
 	vk::PushConstantRange projection_constant(
 		vk::ShaderStageFlagBits::eVertex,
 		0,
-		sizeof(glm::mat4)
+		16 * sizeof(float)
 	);
 	pipeline_layout = device.createPipelineLayout(vk::PipelineLayoutCreateInfo(
 		{}, {}, projection_constant
@@ -474,7 +474,7 @@ void Renderer::draw() {
 		swapchain, UINT64_MAX, image_available_semaphore, nullptr
 	).value;
 	//Update models
-	projection_matrix = glm::rotate(projection_matrix, 0.01f, glm::vec3(0.0f, 0.0f, 1.0f));
+	projection.rotate(Eigen::AngleAxisf(0.002f, Eigen::Vector3f::UnitZ()));
 	//Record command buffer
 	command_buffer.begin(vk::CommandBufferBeginInfo(
 		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
@@ -493,7 +493,8 @@ void Renderer::draw() {
 		pipeline_layout,
 		vk::ShaderStageFlagBits::eVertex,
 		0,
-		vk::ArrayProxy<const glm::mat4>(projection_matrix)
+		16 * sizeof(float),
+		projection.data()
 	);
 	command_buffer.drawIndexed(6, 1, 0, 0, 0);
 	command_buffer.endRenderPass();
