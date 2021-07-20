@@ -25,7 +25,13 @@ namespace lightrail {
 		VmaAllocator allocator;
 		std::unique_ptr<BufferWrapper> vertex_buffer;
 		std::unique_ptr<BufferWrapper> index_buffer;
+		std::unique_ptr<Texture> texture;
 		Eigen::Affine3f projection;
+
+		//Descriptors
+		vk::DescriptorSetLayout descriptor_layout;
+		vk::DescriptorPool descriptor_pool;
+		vk::DescriptorSet descriptor_set;
 
 		//Swapchain & dependencies
 		vk::Extent2D surface_extent;

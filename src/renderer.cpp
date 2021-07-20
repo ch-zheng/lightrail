@@ -129,10 +129,10 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 
 	//Render data
 	const std::array<Vertex, 4> vertices {
-		Vertex{{0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}},
-		Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-		Vertex{{-0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
-		Vertex{{-0.5f, 0.5f}, {0.5f, 0.5f, 0.0f}}
+		Vertex{{0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+		Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+		Vertex{{-0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+		Vertex{{-0.5f, 0.5f}, {0.5f, 0.5f, 0.0f}, {0.0f, 1.0f}}
 	};
 	const std::array<uint16_t, 6> indices {0, 1, 2, 0, 2, 3};
 	projection.setIdentity();
@@ -155,8 +155,9 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	VmaAllocationCreateInfo vertex_alloc_create_info {};
 	vertex_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	vertex_buffer = std::unique_ptr<BufferWrapper>(new BufferWrapper(
-		device, allocator,
-		vertex_buffer_create_info, vertex_alloc_create_info
+		vertex_buffer_create_info,
+		vertex_alloc_create_info,
+		allocator
 	));
 	vertex_buffer->staged_write(vertices.data(), command_buffer, graphics_queue);
 	//Index buffer
@@ -169,11 +170,65 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	VmaAllocationCreateInfo index_alloc_create_info {};
 	index_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	index_buffer = std::unique_ptr<BufferWrapper>(new BufferWrapper(
-		device, allocator,
-		index_buffer_create_info, index_alloc_create_info
+		index_buffer_create_info,
+		index_alloc_create_info,
+		allocator
 	));
 	index_buffer->staged_write(indices.data(), command_buffer, graphics_queue);
+	//Texture
+	texture = std::unique_ptr<Texture>(new Texture(
+		"./assets/stone.bmp",
+		device,
+		allocator,
+		command_buffer,
+		graphics_queue
+	));
 
+	//Descriptor layout
+	vk::DescriptorSetLayoutBinding descriptor_layout_bindings(
+		0,
+		vk::DescriptorType::eCombinedImageSampler,
+		1,
+		vk::ShaderStageFlagBits::eFragment
+	);
+	descriptor_layout = device.createDescriptorSetLayout(
+		vk::DescriptorSetLayoutCreateInfo(
+			{},
+			descriptor_layout_bindings
+		)
+	);
+	//Descriptor pool
+	vk::DescriptorPoolSize descriptor_pool_sizes(vk::DescriptorType::eCombinedImageSampler, 1);
+	descriptor_pool = device.createDescriptorPool(vk::DescriptorPoolCreateInfo(
+		{},
+		1,
+		descriptor_pool_sizes
+	));
+	//Descriptor set creation
+	auto descriptor_sets = device.allocateDescriptorSets(
+		vk::DescriptorSetAllocateInfo(
+			descriptor_pool,
+			descriptor_layout
+		)
+	);
+	descriptor_set = descriptor_sets[0];
+	//Update descriptor sets
+	vk::DescriptorImageInfo descriptor_image_info(
+		texture->get_sampler(),
+		texture->get_image_view(),
+		vk::ImageLayout::eShaderReadOnlyOptimal
+	);
+	device.updateDescriptorSets(
+		vk::WriteDescriptorSet(
+			descriptor_set,
+			0,
+			0,
+			1,
+			vk::DescriptorType::eCombinedImageSampler,
+			&descriptor_image_info
+		), {}
+	);
+	
 	//Swapchain
 	create_swapchain();
 }
@@ -345,7 +400,7 @@ void Renderer::create_pipelines() {
 	//Fixed functions
 	//Vertex input
 	vk::VertexInputBindingDescription binding_descriptions(0, sizeof(Vertex));
-	std::array<vk::VertexInputAttributeDescription, 2> attribute_descriptions {
+	std::array<vk::VertexInputAttributeDescription, 3> attribute_descriptions {
 		vk::VertexInputAttributeDescription(
 			0,
 			0,
@@ -357,6 +412,12 @@ void Renderer::create_pipelines() {
 			0,
 			vk::Format::eR32G32B32Sfloat,
 			offsetof(Vertex, color)
+		),
+		vk::VertexInputAttributeDescription(
+			2,
+			0,
+			vk::Format::eR32G32Sfloat,
+			offsetof(Vertex, texture_pos)
 		),
 	};
 	vk::PipelineVertexInputStateCreateInfo vertex_input(
@@ -428,7 +489,9 @@ void Renderer::create_pipelines() {
 		16 * sizeof(float)
 	);
 	pipeline_layout = device.createPipelineLayout(vk::PipelineLayoutCreateInfo(
-		{}, {}, projection_constant
+		{},
+		descriptor_layout,
+		projection_constant
 	));
 
 	//Create pipeline
@@ -496,6 +559,13 @@ void Renderer::draw() {
 		16 * sizeof(float),
 		projection.data()
 	);
+	command_buffer.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pipeline_layout,
+		0,
+		descriptor_set,
+		{}
+	);
 	command_buffer.drawIndexed(6, 1, 0, 0, 0);
 	command_buffer.endRenderPass();
 	command_buffer.end();
@@ -524,7 +594,11 @@ void Renderer::wait() {
 
 Renderer::~Renderer() {
 	device.waitIdle();
+	//Descriptors
+	device.destroyDescriptorPool(descriptor_pool);
+	device.destroyDescriptorSetLayout(descriptor_layout);
 	//Memory structures
+	texture->destroy();
 	index_buffer->destroy();
 	vertex_buffer->destroy();
 	vmaDestroyAllocator(allocator);
