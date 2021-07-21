@@ -77,7 +77,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 			vk::DeviceQueueCreateInfo({}, present_queue_family, 1, &queue_priority)
 		};
 	}
-	std::vector<char const*> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+	const std::vector<char const*> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 	device = physical_device.createDevice(vk::DeviceCreateInfo(
 		{}, queue_create_infos, {}, device_extensions, {}
 	));
@@ -146,7 +146,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	allocator_create_info.device = device;
 	vmaCreateAllocator(&allocator_create_info, &allocator);
 	//Vertex buffer
-	vk::BufferCreateInfo vertex_buffer_create_info(
+	const vk::BufferCreateInfo vertex_buffer_create_info(
 		{},
 		sizeof(Vertex) * vertices.size(),
 		vk::BufferUsageFlagBits::eVertexBuffer
@@ -161,7 +161,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	));
 	vertex_buffer->staged_write(vertices.data(), command_buffer, graphics_queue);
 	//Index buffer
-	vk::BufferCreateInfo index_buffer_create_info(
+	const vk::BufferCreateInfo index_buffer_create_info(
 		{},
 		sizeof(uint16_t) * indices.size(),
 		vk::BufferUsageFlagBits::eIndexBuffer
@@ -177,7 +177,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	index_buffer->staged_write(indices.data(), command_buffer, graphics_queue);
 	//Texture
 	texture = std::unique_ptr<Texture>(new Texture(
-		"./assets/stone.bmp",
+		"./assets/tank.bmp",
 		device,
 		allocator,
 		command_buffer,
@@ -185,7 +185,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	));
 
 	//Descriptor layout
-	vk::DescriptorSetLayoutBinding descriptor_layout_bindings(
+	const vk::DescriptorSetLayoutBinding descriptor_layout_bindings(
 		0,
 		vk::DescriptorType::eCombinedImageSampler,
 		1,
@@ -198,7 +198,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 		)
 	);
 	//Descriptor pool
-	vk::DescriptorPoolSize descriptor_pool_sizes(vk::DescriptorType::eCombinedImageSampler, 1);
+	const vk::DescriptorPoolSize descriptor_pool_sizes(vk::DescriptorType::eCombinedImageSampler, 1);
 	descriptor_pool = device.createDescriptorPool(vk::DescriptorPoolCreateInfo(
 		{},
 		1,
@@ -213,7 +213,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	);
 	descriptor_set = descriptor_sets[0];
 	//Update descriptor sets
-	vk::DescriptorImageInfo descriptor_image_info(
+	const vk::DescriptorImageInfo descriptor_image_info(
 		texture->get_sampler(),
 		texture->get_image_view(),
 		vk::ImageLayout::eShaderReadOnlyOptimal
@@ -236,9 +236,9 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 void Renderer::create_swapchain() {
 	device.waitIdle();
 	//Surface capabilities
-	auto surface_capabilities =
+	const auto surface_capabilities =
 		physical_device.getSurfaceCapabilitiesKHR(surface);
-	auto formats = physical_device.getSurfaceFormatsKHR(surface);
+	const auto formats = physical_device.getSurfaceFormatsKHR(surface);
 	auto surface_format = formats.front();
 	//TODO: Preferred format/colorspace?
 	for (const auto& format : formats) {
@@ -297,7 +297,7 @@ void Renderer::create_swapchain() {
 	swapchain = new_swapchain;
 
 	//Images & image views
-	auto images = device.getSwapchainImagesKHR(swapchain);
+	const auto images = device.getSwapchainImagesKHR(swapchain);
 	image_views.reserve(images.size());
 	vk::ComponentMapping component_mapping(
 		vk::ComponentSwizzle::eIdentity,
@@ -305,7 +305,7 @@ void Renderer::create_swapchain() {
 		vk::ComponentSwizzle::eIdentity,
 		vk::ComponentSwizzle::eIdentity
 	);
-	vk::ImageSubresourceRange subresource_range(
+	const vk::ImageSubresourceRange subresource_range(
 		vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1
 	);
 	for (auto& image : images) {
@@ -321,7 +321,7 @@ void Renderer::create_swapchain() {
 	}
 
 	//Render pass
-	vk::AttachmentDescription attachments(
+	const vk::AttachmentDescription attachments(
 		{},
 		surface_format.format,
 		vk::SampleCountFlagBits::e1,
@@ -332,8 +332,8 @@ void Renderer::create_swapchain() {
 		vk::ImageLayout::eUndefined,
 		vk::ImageLayout::ePresentSrcKHR
 	);
-	vk::AttachmentReference color_attachments(0, vk::ImageLayout::eAttachmentOptimalKHR);
-	vk::SubpassDescription subpasses(
+	const vk::AttachmentReference color_attachments(0, vk::ImageLayout::eAttachmentOptimalKHR);
+	const vk::SubpassDescription subpasses(
 		{},
 		vk::PipelineBindPoint::eGraphics,
 		{}, color_attachments, {}, {}, {}
@@ -380,9 +380,9 @@ void Renderer::destroy_swapchain() {
 //TODO: Inline into create_swapchain()?
 void Renderer::create_pipelines() {
 	//Shaders
-	auto vertex_shader = create_shader_module("shaders/basic.vert.spv");
-	auto fragment_shader = create_shader_module("shaders/basic.frag.spv");
-	std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages {
+	const auto vertex_shader = create_shader_module("shaders/basic.vert.spv");
+	const auto fragment_shader = create_shader_module("shaders/basic.frag.spv");
+	const std::array<vk::PipelineShaderStageCreateInfo, 2> shader_stages {
 		vk::PipelineShaderStageCreateInfo(
 			{},
 			vk::ShaderStageFlagBits::eVertex,
@@ -399,8 +399,8 @@ void Renderer::create_pipelines() {
 
 	//Fixed functions
 	//Vertex input
-	vk::VertexInputBindingDescription binding_descriptions(0, sizeof(Vertex));
-	std::array<vk::VertexInputAttributeDescription, 3> attribute_descriptions {
+	const vk::VertexInputBindingDescription binding_descriptions(0, sizeof(Vertex));
+	const std::array<vk::VertexInputAttributeDescription, 3> attribute_descriptions {
 		vk::VertexInputAttributeDescription(
 			0,
 			0,
@@ -420,27 +420,27 @@ void Renderer::create_pipelines() {
 			offsetof(Vertex, texture_pos)
 		),
 	};
-	vk::PipelineVertexInputStateCreateInfo vertex_input(
+	const vk::PipelineVertexInputStateCreateInfo vertex_input(
 		{}, binding_descriptions, attribute_descriptions
 	);
 	//Input assembly
-	vk::PipelineInputAssemblyStateCreateInfo input_assembly(
+	const vk::PipelineInputAssemblyStateCreateInfo input_assembly(
 		{}, vk::PrimitiveTopology::eTriangleList, false
 	);
 	//Viewport
-	vk::Viewport viewports(
+	const vk::Viewport viewports(
 		0.0f, 0.0f,
 		surface_extent.width, surface_extent.height,
 		0.0f, 1.0f
 	);
-	vk::Rect2D scissors(vk::Offset2D(0, 0), surface_extent);
-	vk::PipelineViewportStateCreateInfo viewport(
+	const vk::Rect2D scissors(vk::Offset2D(0, 0), surface_extent);
+	const vk::PipelineViewportStateCreateInfo viewport(
 		{},
 		viewports,
 		scissors
 	);
 	//Rasterizer
-	vk::PipelineRasterizationStateCreateInfo rasterization(
+	const vk::PipelineRasterizationStateCreateInfo rasterization(
 		{},
 		false,
 		false,
@@ -450,7 +450,7 @@ void Renderer::create_pipelines() {
 		1.0f
 	);
 	//Multisampling
-	vk::PipelineMultisampleStateCreateInfo multisample(
+	const vk::PipelineMultisampleStateCreateInfo multisample(
 		{},
 		vk::SampleCountFlagBits::e1,
 		false,
@@ -461,7 +461,7 @@ void Renderer::create_pipelines() {
 	);
 	//TODO: Depth stencil
 	//Color blending
-	vk::PipelineColorBlendAttachmentState color_blend_attachments(
+	const vk::PipelineColorBlendAttachmentState color_blend_attachments(
 		true,
 		vk::BlendFactor::eSrcAlpha,
 		vk::BlendFactor::eOneMinusSrcAlpha,
@@ -474,7 +474,7 @@ void Renderer::create_pipelines() {
 		| vk::ColorComponentFlagBits::eB
 		| vk::ColorComponentFlagBits::eA
 	);
-	vk::PipelineColorBlendStateCreateInfo color_blend(
+	const vk::PipelineColorBlendStateCreateInfo color_blend(
 		{},
 		false,
 		vk::LogicOp::eCopy,
@@ -483,7 +483,7 @@ void Renderer::create_pipelines() {
 	);
 	//TODO: Dynamic state?
 	//Layout
-	vk::PushConstantRange projection_constant(
+	const vk::PushConstantRange projection_constant(
 		vk::ShaderStageFlagBits::eVertex,
 		0,
 		16 * sizeof(float)
@@ -495,7 +495,7 @@ void Renderer::create_pipelines() {
 	));
 
 	//Create pipeline
-	vk::GraphicsPipelineCreateInfo pipeline_create_infos(
+	const vk::GraphicsPipelineCreateInfo pipeline_create_infos(
 		{},
 		shader_stages,
 		&vertex_input,
@@ -533,7 +533,7 @@ vk::ShaderModule Renderer::create_shader_module(std::string filename) {
 }
 
 void Renderer::draw() {
-	uint32_t image_index = device.acquireNextImageKHR(
+	const uint32_t image_index = device.acquireNextImageKHR(
 		swapchain, UINT64_MAX, image_available_semaphore, nullptr
 	).value;
 	//Update models
@@ -542,7 +542,7 @@ void Renderer::draw() {
 	command_buffer.begin(vk::CommandBufferBeginInfo(
 		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
 	));
-	vk::ClearValue clear_values(std::array<float, 4> {0.0f, 0.0f, 0.0f, 1.0f});
+	const vk::ClearValue clear_values(std::array<float, 4> {0.0f, 0.0f, 0.0f, 1.0f});
 	command_buffer.beginRenderPass(vk::RenderPassBeginInfo(
 		render_pass,
 		framebuffers[image_index],
@@ -570,7 +570,7 @@ void Renderer::draw() {
 	command_buffer.endRenderPass();
 	command_buffer.end();
 	//Submit & present
-	vk::PipelineStageFlags wait_stage_flags = vk::PipelineStageFlagBits::eTopOfPipe;
+	const vk::PipelineStageFlags wait_stage_flags = vk::PipelineStageFlagBits::eTopOfPipe;
 	graphics_queue.submit(vk::SubmitInfo(
 		image_available_semaphore,
 		wait_stage_flags,

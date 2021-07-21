@@ -1,5 +1,6 @@
 #include "render-utils.hpp"
 #include <SDL2/SDL_surface.h>
+#include <iostream>
 using namespace lightrail;
 
 BufferWrapper::BufferWrapper(
@@ -30,7 +31,7 @@ void BufferWrapper::staged_write(
 	const vk::CommandBuffer& command_buffer,
 	const vk::Queue& queue) {
 	//Create staging buffer
-	vk::BufferCreateInfo staging_buffer_create_info(
+	const vk::BufferCreateInfo staging_buffer_create_info(
 		{},
 		size,
 		vk::BufferUsageFlagBits::eTransferSrc
@@ -70,16 +71,17 @@ Texture::Texture(
 	const vk::CommandBuffer& command_buffer,
 	const vk::Queue& queue)
 	: device(device), allocator(allocator) {
+	constexpr vk::Format image_format = vk::Format::eR8G8B8A8Srgb;
 	//SDL Surface creation
 	auto tmp_surface = SDL_LoadBMP(filename);
 	auto surface = SDL_ConvertSurfaceFormat(tmp_surface, SDL_PIXELFORMAT_RGBA32, 0);
-	vk::Extent3D image_extent(surface->w, surface->h, 1);
 	SDL_FreeSurface(tmp_surface);
+	const vk::Extent3D image_extent(surface->w, surface->h, 1);
 	//Image creation
-	vk::ImageCreateInfo image_create_info(
+	const vk::ImageCreateInfo image_create_info(
 		{},
 		vk::ImageType::e2D,
-		vk::Format::eR8G8B8A8Uint,
+		image_format,
 		image_extent,
 		1,
 		1,
@@ -100,7 +102,7 @@ Texture::Texture(
 		nullptr
 	);
 	//Staging buffer creation
-	vk::BufferCreateInfo staging_buffer_create_info(
+	const vk::BufferCreateInfo staging_buffer_create_info(
 		{},
 		surface->w * surface->h * surface->format->BytesPerPixel,
 		vk::BufferUsageFlagBits::eTransferSrc
@@ -115,12 +117,12 @@ Texture::Texture(
 	staging_buffer.write(surface->pixels);
 	SDL_FreeSurface(surface);
 	//Transfer
-	vk::ImageSubresourceRange range(
+	const vk::ImageSubresourceRange range(
 		vk::ImageAspectFlagBits::eColor,
 		0, 1,
 		0, 1
 	);
-	vk::ImageMemoryBarrier transfer_barrier(
+	const vk::ImageMemoryBarrier transfer_barrier(
 		vk::AccessFlagBits::eNoneKHR,
 		vk::AccessFlagBits::eTransferWrite,
 		vk::ImageLayout::eUndefined,
@@ -183,11 +185,11 @@ Texture::Texture(
 	auto fence = device.createFence({});
 	queue.submit(vk::SubmitInfo({}, {}, command_buffer), fence);
 	//Image view creation
-	vk::ImageViewCreateInfo image_view_create_info(
+	const vk::ImageViewCreateInfo image_view_create_info(
 		{},
 		image,
 		vk::ImageViewType::e2D,
-		vk::Format::eR8G8B8A8Uint,
+		image_format,
 		vk::ComponentMapping(
 			vk::ComponentSwizzle::eIdentity,
 			vk::ComponentSwizzle::eIdentity,
@@ -198,7 +200,7 @@ Texture::Texture(
 	);
 	image_view = device.createImageView(image_view_create_info);
 	//Sampler creation
-	vk::SamplerCreateInfo sampler_create_info(
+	const vk::SamplerCreateInfo sampler_create_info(
 		{},
 		vk::Filter::eNearest,
 		vk::Filter::eNearest,
@@ -218,7 +220,7 @@ Texture::Texture(
 	);
 	sampler = device.createSampler(sampler_create_info);
 	//Cleanup
-	auto result = device.waitForFences(fence, false, 1000000000);
+	const auto result = device.waitForFences(fence, false, 1000000000);
 	device.destroyFence(fence);
 	staging_buffer.destroy();
 }
