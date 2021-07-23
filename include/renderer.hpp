@@ -1,11 +1,18 @@
 #pragma once
-#include "render-utils.hpp"
+#include "bufferwrapper.hpp"
+#include "texture.hpp"
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL2/SDL_vulkan.h>
 #include <Eigen/Geometry>
 
 namespace lightrail {
+	struct Vertex {
+		std::array<float, 3> position;
+		std::array<float, 3> color;
+		std::array<float, 2> texture_pos;
+	};
+
 	class Renderer {
 		const std::string PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
 

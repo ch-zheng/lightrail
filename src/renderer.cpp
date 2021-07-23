@@ -175,6 +175,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 		allocator
 	));
 	index_buffer->staged_write(indices.data(), command_buffer, graphics_queue);
+	//Depth buffer
 	//Texture
 	texture = std::unique_ptr<Texture>(new Texture(
 		"./assets/tank.bmp",
