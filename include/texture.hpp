@@ -4,13 +4,15 @@
 
 namespace lightrail {
 	class Texture {
-		const vk::Device& device;
-		const VmaAllocator& allocator;
 		vk::Image image;
 		VmaAllocation alloc;
 		vk::ImageView image_view;
 		vk::Sampler sampler;
+		const vk::Device* device;
+		const VmaAllocator* allocator;
+
 		public:
+		Texture() = default;
 		Texture(
 			const char* filename,
 			const vk::Device&,

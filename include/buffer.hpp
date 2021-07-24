@@ -3,20 +3,22 @@
 #include <vulkan/vulkan.hpp>
 
 namespace lightrail {
-	class BufferWrapper {
-		const VmaAllocator& allocator;
-		size_t size;
-		vk::Buffer buf;
+	class Buffer {
+		vk::Buffer buffer;
 		VmaAllocation alloc;
+		size_t size;
+		const VmaAllocator* allocator;
+
 		public:
-		BufferWrapper(
+		Buffer() = default;
+		Buffer(
 			const vk::BufferCreateInfo&,
 			const VmaAllocationCreateInfo&,
 			const VmaAllocator&
 		);
+		operator const vk::Buffer&() {return buffer;}
 		void write(const void*);
 		void staged_write(const void*, const vk::CommandBuffer&, const vk::Queue&);
-		const vk::Buffer& get_buf() const {return buf;}
 		void destroy();
 	};
 }

@@ -1,5 +1,5 @@
 #pragma once
-#include "bufferwrapper.hpp"
+#include "buffer.hpp"
 #include "texture.hpp"
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
@@ -30,8 +30,8 @@ namespace lightrail {
 		
 		//Memory structures
 		VmaAllocator allocator;
-		std::unique_ptr<BufferWrapper> vertex_buffer;
-		std::unique_ptr<BufferWrapper> index_buffer;
+		Buffer vertex_buffer;
+		Buffer index_buffer;
 		std::unique_ptr<Texture> texture;
 		Eigen::Affine3f projection;
 
@@ -53,7 +53,6 @@ namespace lightrail {
 		void destroy_swapchain();
 		void create_pipelines();
 		vk::ShaderModule create_shader_module(std::string);
-		BufferWrapper create_buffer_wrapper(vk::BufferCreateInfo&, VmaAllocationCreateInfo&);
 
 		public:
 		Renderer() = default;

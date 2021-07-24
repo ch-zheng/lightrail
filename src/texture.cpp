@@ -1,15 +1,15 @@
 #include "texture.hpp"
-#include "bufferwrapper.hpp"
+#include "buffer.hpp"
 #include <SDL2/SDL_surface.h>
-
 using namespace lightrail;
+
 Texture::Texture(
 	const char* filename,
 	const vk::Device& device,
 	const VmaAllocator& allocator,
 	const vk::CommandBuffer& command_buffer,
 	const vk::Queue& queue)
-	: device(device), allocator(allocator) {
+	: device(&device), allocator(&allocator) {
 	constexpr vk::Format image_format = vk::Format::eR8G8B8A8Srgb;
 	//SDL Surface creation
 	auto tmp_surface = SDL_LoadBMP(filename);
@@ -48,7 +48,7 @@ Texture::Texture(
 	);
 	VmaAllocationCreateInfo staging_alloc_create_info {};
 	staging_alloc_create_info.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-	auto staging_buffer = BufferWrapper(
+	auto staging_buffer = Buffer(
 		staging_buffer_create_info,
 		staging_alloc_create_info,
 		allocator
@@ -93,7 +93,7 @@ Texture::Texture(
 		)
 	);
 	command_buffer.copyBufferToImage(
-		staging_buffer.get_buf(),
+		staging_buffer,
 		image,
 		vk::ImageLayout::eTransferDstOptimal,
 		vk::BufferImageCopy(
@@ -165,7 +165,7 @@ Texture::Texture(
 }
 
 void Texture::destroy() {
-	device.destroySampler(sampler);
-	device.destroyImageView(image_view);
-	vmaDestroyImage(allocator, image, alloc);
+	device->destroySampler(sampler);
+	device->destroyImageView(image_view);
+	vmaDestroyImage(*allocator, image, alloc);
 }

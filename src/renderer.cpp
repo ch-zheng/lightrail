@@ -154,12 +154,12 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	);
 	VmaAllocationCreateInfo vertex_alloc_create_info {};
 	vertex_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	vertex_buffer = std::unique_ptr<BufferWrapper>(new BufferWrapper(
+	vertex_buffer = Buffer(
 		vertex_buffer_create_info,
 		vertex_alloc_create_info,
 		allocator
-	));
-	vertex_buffer->staged_write(vertices.data(), command_buffer, graphics_queue);
+	);
+	vertex_buffer.staged_write(vertices.data(), command_buffer, graphics_queue);
 	//Index buffer
 	const vk::BufferCreateInfo index_buffer_create_info(
 		{},
@@ -169,12 +169,12 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	);
 	VmaAllocationCreateInfo index_alloc_create_info {};
 	index_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	index_buffer = std::unique_ptr<BufferWrapper>(new BufferWrapper(
+	index_buffer = Buffer(
 		index_buffer_create_info,
 		index_alloc_create_info,
 		allocator
-	));
-	index_buffer->staged_write(indices.data(), command_buffer, graphics_queue);
+	);
+	index_buffer.staged_write(indices.data(), command_buffer, graphics_queue);
 	//Depth buffer
 	//Texture
 	texture = std::unique_ptr<Texture>(new Texture(
@@ -551,8 +551,8 @@ void Renderer::draw() {
 		clear_values
 	), vk::SubpassContents::eInline);
 	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[0]);
-	command_buffer.bindVertexBuffers(0, vertex_buffer->get_buf(), {0});
-	command_buffer.bindIndexBuffer(index_buffer->get_buf(), 0, vk::IndexType::eUint16);
+	command_buffer.bindVertexBuffers(0, static_cast<const vk::Buffer>(vertex_buffer), {0});
+	command_buffer.bindIndexBuffer(static_cast<const vk::Buffer>(index_buffer), 0, vk::IndexType::eUint16);
 	command_buffer.pushConstants(
 		pipeline_layout,
 		vk::ShaderStageFlagBits::eVertex,
@@ -600,8 +600,8 @@ Renderer::~Renderer() {
 	device.destroyDescriptorSetLayout(descriptor_layout);
 	//Memory structures
 	texture->destroy();
-	index_buffer->destroy();
-	vertex_buffer->destroy();
+	index_buffer.destroy();
+	vertex_buffer.destroy();
 	vmaDestroyAllocator(allocator);
 	//Save pipeline cache
 	std::ofstream pipeline_cache_file(PIPELINE_CACHE_FILENAME, std::ofstream::binary);
