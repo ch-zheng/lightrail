@@ -3,7 +3,7 @@
 #include <algorithm>
 //#include <future>
 #include <fstream>
-#include <iostream>
+//#include <iostream>
 using namespace lightrail;
 
 Renderer::Renderer(SDL_Window *window) : window(window) {
@@ -129,10 +129,10 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 
 	//Render data
 	const std::array<Vertex, 4> vertices {
-		Vertex{{0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
-		Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-		Vertex{{-0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-		Vertex{{-0.5f, 0.5f}, {0.5f, 0.5f, 0.0f}, {0.0f, 1.0f}}
+		Vertex{{0.5f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+		Vertex{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+		Vertex{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+		Vertex{{-0.5f, 0.5f, 0.0f}, {0.5f, 0.5f, 0.0f}, {0.0f, 1.0f}}
 	};
 	const std::array<uint16_t, 6> indices {0, 1, 2, 0, 2, 3};
 	projection.setIdentity();
@@ -241,7 +241,6 @@ void Renderer::create_swapchain() {
 		physical_device.getSurfaceCapabilitiesKHR(surface);
 	const auto formats = physical_device.getSurfaceFormatsKHR(surface);
 	auto surface_format = formats.front();
-	//TODO: Preferred format/colorspace?
 	for (const auto& format : formats) {
 		if (format.format == vk::Format::eB8G8R8A8Srgb
 			&& format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
@@ -294,7 +293,7 @@ void Renderer::create_swapchain() {
 		swapchain
 	));
 	//Free old swapchain resources
-	destroy_swapchain();
+	if (swapchain) destroy_swapchain();
 	swapchain = new_swapchain;
 
 	//Images & image views
@@ -321,44 +320,104 @@ void Renderer::create_swapchain() {
 		image_views.push_back(image_view);
 	}
 
-	//Render pass
-	const vk::AttachmentDescription attachments(
-		{},
-		surface_format.format,
-		vk::SampleCountFlagBits::e1,
-		vk::AttachmentLoadOp::eClear,
-		vk::AttachmentStoreOp::eStore,
-		vk::AttachmentLoadOp::eDontCare,
-		vk::AttachmentStoreOp::eDontCare,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::ePresentSrcKHR
+	//Depth buffer
+	//TODO: Format support determination
+	const vk::Format depth_format = vk::Format::eD32SfloatS8Uint;
+	VmaAllocationCreateInfo depth_image_alloc_create_info {};
+	depth_image_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	depth_image = Image(
+		vk::ImageCreateInfo(
+			{},
+			vk::ImageType::e2D,
+			depth_format,
+			vk::Extent3D(surface_extent.width, surface_extent.height, 1),
+			1,
+			1,
+			vk::SampleCountFlagBits::e1,
+			vk::ImageTiling::eOptimal,
+			vk::ImageUsageFlagBits::eDepthStencilAttachment,
+			vk::SharingMode::eExclusive
+		),
+		depth_image_alloc_create_info,
+		allocator
 	);
+	depth_image_view = device.createImageView(vk::ImageViewCreateInfo(
+		{},
+		depth_image,
+		vk::ImageViewType::e2D,
+		depth_format,
+		vk::ComponentMapping(
+			vk::ComponentSwizzle::eIdentity,
+			vk::ComponentSwizzle::eIdentity,
+			vk::ComponentSwizzle::eIdentity,
+			vk::ComponentSwizzle::eIdentity
+		),
+		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1)
+	));
+
+	//Render pass
+	const std::array<vk::AttachmentDescription, 2> attachments {
+		//Color attachment
+		vk::AttachmentDescription(
+			{},
+			surface_format.format,
+			vk::SampleCountFlagBits::e1,
+			vk::AttachmentLoadOp::eClear,
+			vk::AttachmentStoreOp::eStore,
+			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::ePresentSrcKHR
+		),
+		//Depth attachment
+		vk::AttachmentDescription(
+			{},
+			depth_format,
+			vk::SampleCountFlagBits::e1,
+			vk::AttachmentLoadOp::eClear,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eDepthStencilAttachmentOptimal
+		)
+	};
 	const vk::AttachmentReference color_attachments(0, vk::ImageLayout::eAttachmentOptimalKHR);
+	const vk::AttachmentReference depth_attachment(1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 	const vk::SubpassDescription subpasses(
 		{},
 		vk::PipelineBindPoint::eGraphics,
-		{}, color_attachments, {}, {}, {}
+		{}, color_attachments, {}, &depth_attachment, {}
+	);
+	const vk::SubpassDependency dependencies(
+		VK_SUBPASS_EXTERNAL,
+		0,
+		vk::PipelineStageFlagBits::eEarlyFragmentTests,
+		vk::PipelineStageFlagBits::eEarlyFragmentTests,
+		vk::AccessFlagBits::eNoneKHR,
+		vk::AccessFlagBits::eDepthStencilAttachmentWrite
 	);
 	render_pass = device.createRenderPass(vk::RenderPassCreateInfo(
 		{},
 		attachments,
 		subpasses,
-		{}
+		dependencies
 	));
 
 	//Framebuffers
 	framebuffers.reserve(image_views.size());
 	for (auto& image_view : image_views) {
+		std::array<vk::ImageView, 2> attachments {image_view, depth_image_view};
 		framebuffers.push_back(device.createFramebuffer(vk::FramebufferCreateInfo(
 			{},
 			render_pass,
-			image_view,
+			attachments,
 			surface_extent.width,
 			surface_extent.height,
 			1
 		)));
 	}
-	
+
 	//Pipelines
 	create_pipelines();
 }
@@ -372,9 +431,11 @@ void Renderer::destroy_swapchain() {
 		device.destroyFramebuffer(framebuffer);
 	framebuffers.clear();
 	device.destroyRenderPass(render_pass);
+	device.destroyImageView(depth_image_view);
 	for (auto image_view : image_views)
 		device.destroyImageView(image_view);
 	image_views.clear();
+	depth_image.destroy();
 	device.destroySwapchainKHR(swapchain);
 }
 
@@ -460,7 +521,16 @@ void Renderer::create_pipelines() {
 		false,
 		false
 	);
-	//TODO: Depth stencil
+	//Depth stencil
+	//TODO: Stencil
+	const vk::PipelineDepthStencilStateCreateInfo depth_stencil(
+		{},
+		true,
+		true,
+		vk::CompareOp::eLess,
+		false,
+		false
+	);
 	//Color blending
 	const vk::PipelineColorBlendAttachmentState color_blend_attachments(
 		true,
@@ -505,7 +575,7 @@ void Renderer::create_pipelines() {
 		&viewport,
 		&rasterization,
 		&multisample,
-		{},
+		&depth_stencil,
 		&color_blend,
 		{},
 		pipeline_layout,
@@ -543,7 +613,10 @@ void Renderer::draw() {
 	command_buffer.begin(vk::CommandBufferBeginInfo(
 		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
 	));
-	const vk::ClearValue clear_values(std::array<float, 4> {0.0f, 0.0f, 0.0f, 1.0f});
+	const std::array<vk::ClearValue, 2> clear_values {
+		vk::ClearValue(std::array<float, 4> {0.0f, 0.0f, 0.0f, 1.0f}),
+		vk::ClearDepthStencilValue(1.0f, 0.0f)
+	};
 	command_buffer.beginRenderPass(vk::RenderPassBeginInfo(
 		render_pass,
 		framebuffers[image_index],
@@ -602,7 +675,6 @@ Renderer::~Renderer() {
 	texture->destroy();
 	index_buffer.destroy();
 	vertex_buffer.destroy();
-	vmaDestroyAllocator(allocator);
 	//Save pipeline cache
 	std::ofstream pipeline_cache_file(PIPELINE_CACHE_FILENAME, std::ofstream::binary);
 	auto pipeline_cache_data = device.getPipelineCacheData(pipeline_cache);
@@ -618,6 +690,7 @@ Renderer::~Renderer() {
 	device.destroySemaphore(render_finished_semaphore);
 	device.freeCommandBuffers(command_pool, command_buffer);
 	device.destroyCommandPool(command_pool);
+	vmaDestroyAllocator(allocator);
 	device.destroy();
 	instance.destroySurfaceKHR(surface);
 	instance.destroy();

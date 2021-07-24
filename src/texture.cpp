@@ -9,7 +9,7 @@ Texture::Texture(
 	const VmaAllocator& allocator,
 	const vk::CommandBuffer& command_buffer,
 	const vk::Queue& queue)
-	: device(&device), allocator(&allocator) {
+	: device(&device) {
 	constexpr vk::Format image_format = vk::Format::eR8G8B8A8Srgb;
 	//SDL Surface creation
 	auto tmp_surface = SDL_LoadBMP(filename);
@@ -32,14 +32,7 @@ Texture::Texture(
 	);
 	VmaAllocationCreateInfo alloc_create_info {};
 	alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	vmaCreateImage(
-		allocator, 
-		reinterpret_cast<const VkImageCreateInfo*>(&image_create_info),
-		&alloc_create_info,
-		reinterpret_cast<VkImage*>(&image),
-		&alloc,
-		nullptr
-	);
+	image = Image(image_create_info, alloc_create_info, allocator);
 	//Staging buffer creation
 	const vk::BufferCreateInfo staging_buffer_create_info(
 		{},
@@ -124,7 +117,7 @@ Texture::Texture(
 	auto fence = device.createFence({});
 	queue.submit(vk::SubmitInfo({}, {}, command_buffer), fence);
 	//Image view creation
-	const vk::ImageViewCreateInfo image_view_create_info(
+	image_view = device.createImageView(vk::ImageViewCreateInfo(
 		{},
 		image,
 		vk::ImageViewType::e2D,
@@ -136,10 +129,9 @@ Texture::Texture(
 			vk::ComponentSwizzle::eIdentity
 		),
 		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-	);
-	image_view = device.createImageView(image_view_create_info);
+	));
 	//Sampler creation
-	const vk::SamplerCreateInfo sampler_create_info(
+	sampler = device.createSampler(vk::SamplerCreateInfo(
 		{},
 		vk::Filter::eNearest,
 		vk::Filter::eNearest,
@@ -156,8 +148,7 @@ Texture::Texture(
 		0.0f,
 		vk::BorderColor::eIntOpaqueBlack,
 		false
-	);
-	sampler = device.createSampler(sampler_create_info);
+	));
 	//Cleanup
 	const auto result = device.waitForFences(fence, false, 1000000000);
 	device.destroyFence(fence);
@@ -167,5 +158,5 @@ Texture::Texture(
 void Texture::destroy() {
 	device->destroySampler(sampler);
 	device->destroyImageView(image_view);
-	vmaDestroyImage(*allocator, image, alloc);
+	image.destroy();
 }

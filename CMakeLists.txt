@@ -11,6 +11,7 @@ target_sources(
 	src/app.cpp
 	src/renderer.cpp
 	src/buffer.cpp
+	src/image.cpp
 	src/texture.cpp
 )
 target_link_libraries(lightrail SDL2 vulkan Eigen3::Eigen)

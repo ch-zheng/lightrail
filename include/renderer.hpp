@@ -30,6 +30,7 @@ namespace lightrail {
 		
 		//Memory structures
 		VmaAllocator allocator;
+		//Mesh
 		Buffer vertex_buffer;
 		Buffer index_buffer;
 		std::unique_ptr<Texture> texture;
@@ -45,9 +46,12 @@ namespace lightrail {
 		vk::SwapchainKHR swapchain;
 		std::vector<vk::ImageView> image_views;
 		vk::RenderPass render_pass;
+		std::vector<vk::Framebuffer> framebuffers;
 		vk::PipelineLayout pipeline_layout;
 		std::vector<vk::Pipeline> pipelines;
-		std::vector<vk::Framebuffer> framebuffers;
+		//Depth buffer
+		Image depth_image;
+		vk::ImageView depth_image_view;
 
 		void create_swapchain();
 		void destroy_swapchain();
