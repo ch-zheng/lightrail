@@ -22,6 +22,7 @@ namespace lightrail {
 		vk::PhysicalDevice physical_device;
 		uint32_t graphics_queue_family, present_queue_family;
 		vk::Device device;
+		vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
 		vk::Queue graphics_queue, present_queue;
 		vk::CommandPool command_pool;
 		vk::CommandBuffer command_buffer;
@@ -45,13 +46,14 @@ namespace lightrail {
 		vk::Extent2D surface_extent;
 		vk::SwapchainKHR swapchain;
 		std::vector<vk::ImageView> image_views;
+		Image color_image;
+		vk::ImageView color_image_view;
+		Image depth_image;
+		vk::ImageView depth_image_view;
 		vk::RenderPass render_pass;
 		std::vector<vk::Framebuffer> framebuffers;
 		vk::PipelineLayout pipeline_layout;
 		std::vector<vk::Pipeline> pipelines;
-		//Depth buffer
-		Image depth_image;
-		vk::ImageView depth_image_view;
 
 		void create_swapchain();
 		void destroy_swapchain();

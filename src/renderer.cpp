@@ -64,6 +64,25 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	}
 	if (!device_found) throw std::runtime_error("No graphics device found");
 
+	//Device properties
+	auto properties = physical_device.getProperties();
+	//Multisampling
+	vk::SampleCountFlags sample_count_flags =
+		properties.limits.framebufferColorSampleCounts
+		& properties.limits.framebufferDepthSampleCounts;
+	if (sample_count_flags & vk::SampleCountFlagBits::e64)
+		sample_count = vk::SampleCountFlagBits::e64;
+	else if (sample_count_flags & vk::SampleCountFlagBits::e32)
+		sample_count = vk::SampleCountFlagBits::e32;
+	else if (sample_count_flags & vk::SampleCountFlagBits::e16)
+		sample_count = vk::SampleCountFlagBits::e16;
+	else if (sample_count_flags & vk::SampleCountFlagBits::e8)
+		sample_count = vk::SampleCountFlagBits::e8;
+	else if (sample_count_flags & vk::SampleCountFlagBits::e4)
+		sample_count = vk::SampleCountFlagBits::e4;
+	else if (sample_count_flags & vk::SampleCountFlagBits::e2)
+		sample_count = vk::SampleCountFlagBits::e2;
+
 	//Queues & Logical device
 	float queue_priority = 0.0f;
 	std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
@@ -320,6 +339,41 @@ void Renderer::create_swapchain() {
 		image_views.push_back(image_view);
 	}
 
+	//Multisampling buffer
+	//TODO: Sample count determination
+	VmaAllocationCreateInfo color_image_alloc_create_info {};
+	//TODO: Lazy allocation
+	color_image_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	color_image = Image(
+		vk::ImageCreateInfo(
+			{},
+			vk::ImageType::e2D,
+			surface_format.format,
+			vk::Extent3D(surface_extent.width, surface_extent.height, 1),
+			1,
+			1,
+			sample_count,
+			vk::ImageTiling::eOptimal,
+			vk::ImageUsageFlagBits::eColorAttachment
+			| vk::ImageUsageFlagBits::eTransientAttachment
+		),
+		color_image_alloc_create_info,
+		allocator
+	);
+	color_image_view = device.createImageView(vk::ImageViewCreateInfo(
+		{},
+		color_image,
+		vk::ImageViewType::e2D,
+		surface_format.format,
+		vk::ComponentMapping(
+			vk::ComponentSwizzle::eIdentity,
+			vk::ComponentSwizzle::eIdentity,
+			vk::ComponentSwizzle::eIdentity,
+			vk::ComponentSwizzle::eIdentity
+		),
+		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+	));
+
 	//Depth buffer
 	//TODO: Format support determination
 	const vk::Format depth_format = vk::Format::eD32SfloatS8Uint;
@@ -333,10 +387,9 @@ void Renderer::create_swapchain() {
 			vk::Extent3D(surface_extent.width, surface_extent.height, 1),
 			1,
 			1,
-			vk::SampleCountFlagBits::e1,
+			sample_count,
 			vk::ImageTiling::eOptimal,
-			vk::ImageUsageFlagBits::eDepthStencilAttachment,
-			vk::SharingMode::eExclusive
+			vk::ImageUsageFlagBits::eDepthStencilAttachment
 		),
 		depth_image_alloc_create_info,
 		allocator
@@ -356,13 +409,25 @@ void Renderer::create_swapchain() {
 	));
 
 	//Render pass
-	const std::array<vk::AttachmentDescription, 2> attachments {
+	const std::array<vk::AttachmentDescription, 3> attachments {
 		//Color attachment
 		vk::AttachmentDescription(
 			{},
 			surface_format.format,
-			vk::SampleCountFlagBits::e1,
+			sample_count,
 			vk::AttachmentLoadOp::eClear,
+			vk::AttachmentStoreOp::eStore,
+			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal
+		),
+		//Resolve attachment
+		vk::AttachmentDescription(
+			{},
+			surface_format.format,
+			vk::SampleCountFlagBits::e1,
+			vk::AttachmentLoadOp::eDontCare,
 			vk::AttachmentStoreOp::eStore,
 			vk::AttachmentLoadOp::eDontCare,
 			vk::AttachmentStoreOp::eDontCare,
@@ -373,7 +438,7 @@ void Renderer::create_swapchain() {
 		vk::AttachmentDescription(
 			{},
 			depth_format,
-			vk::SampleCountFlagBits::e1,
+			sample_count,
 			vk::AttachmentLoadOp::eClear,
 			vk::AttachmentStoreOp::eDontCare,
 			vk::AttachmentLoadOp::eDontCare,
@@ -383,11 +448,12 @@ void Renderer::create_swapchain() {
 		)
 	};
 	const vk::AttachmentReference color_attachments(0, vk::ImageLayout::eAttachmentOptimalKHR);
-	const vk::AttachmentReference depth_attachment(1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+	const vk::AttachmentReference resolve_attachments(1, vk::ImageLayout::eColorAttachmentOptimal);
+	const vk::AttachmentReference depth_attachment(2, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 	const vk::SubpassDescription subpasses(
 		{},
 		vk::PipelineBindPoint::eGraphics,
-		{}, color_attachments, {}, &depth_attachment, {}
+		{}, color_attachments, resolve_attachments, &depth_attachment, {}
 	);
 	const vk::SubpassDependency dependencies(
 		VK_SUBPASS_EXTERNAL,
@@ -407,7 +473,11 @@ void Renderer::create_swapchain() {
 	//Framebuffers
 	framebuffers.reserve(image_views.size());
 	for (auto& image_view : image_views) {
-		std::array<vk::ImageView, 2> attachments {image_view, depth_image_view};
+		std::array<vk::ImageView, 3> attachments {
+			color_image_view,
+			image_view,
+			depth_image_view
+		};
 		framebuffers.push_back(device.createFramebuffer(vk::FramebufferCreateInfo(
 			{},
 			render_pass,
@@ -432,10 +502,12 @@ void Renderer::destroy_swapchain() {
 	framebuffers.clear();
 	device.destroyRenderPass(render_pass);
 	device.destroyImageView(depth_image_view);
+	device.destroyImageView(color_image_view);
 	for (auto image_view : image_views)
 		device.destroyImageView(image_view);
 	image_views.clear();
 	depth_image.destroy();
+	color_image.destroy();
 	device.destroySwapchainKHR(swapchain);
 }
 
@@ -514,7 +586,7 @@ void Renderer::create_pipelines() {
 	//Multisampling
 	const vk::PipelineMultisampleStateCreateInfo multisample(
 		{},
-		vk::SampleCountFlagBits::e1,
+		sample_count,
 		false,
 		1.0f,
 		nullptr,
@@ -613,7 +685,8 @@ void Renderer::draw() {
 	command_buffer.begin(vk::CommandBufferBeginInfo(
 		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
 	));
-	const std::array<vk::ClearValue, 2> clear_values {
+	const std::array<vk::ClearValue, 3> clear_values {
+		vk::ClearValue(std::array<float, 4> {0.0f, 0.0f, 0.0f, 1.0f}),
 		vk::ClearValue(std::array<float, 4> {0.0f, 0.0f, 0.0f, 1.0f}),
 		vk::ClearDepthStencilValue(1.0f, 0.0f)
 	};
