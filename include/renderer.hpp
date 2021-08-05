@@ -1,6 +1,7 @@
 #pragma once
 #include "buffer.hpp"
 #include "texture.hpp"
+#include "camera.hpp"
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL2/SDL_vulkan.h>
@@ -31,11 +32,9 @@ namespace lightrail {
 		
 		//Memory structures
 		VmaAllocator allocator;
-		//Mesh
 		Buffer vertex_buffer;
 		Buffer index_buffer;
 		std::unique_ptr<Texture> texture;
-		Eigen::Affine3f projection;
 
 		//Descriptors
 		vk::DescriptorSetLayout descriptor_layout;
@@ -61,6 +60,7 @@ namespace lightrail {
 		vk::ShaderModule create_shader_module(std::string);
 
 		public:
+		Camera camera;
 		Renderer() = default;
 		Renderer(SDL_Window*);
 		void draw();

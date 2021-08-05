@@ -147,14 +147,45 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	pipeline_cache_file.close();
 
 	//Render data
-	const std::array<Vertex, 4> vertices {
-		Vertex{{0.5f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
-		Vertex{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-		Vertex{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-		Vertex{{-0.5f, 0.5f, 0.0f}, {0.5f, 0.5f, 0.0f}, {0.0f, 1.0f}}
+	const std::array<Vertex, 8> vertices {
+		Vertex{{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}}
 	};
-	const std::array<uint16_t, 6> indices {0, 1, 2, 0, 2, 3};
-	projection.setIdentity();
+	/*
+	const std::array<Vertex, 3> vertices {
+		Vertex{{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{0.0f, 0.0f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+		Vertex{{0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}}
+	};
+	*/
+	const std::array<uint16_t, 36> indices {
+		//Bottom
+		1, 0, 3,
+		1, 3, 2,
+		//Top
+		4, 5, 6,
+		4, 6, 7,
+		//Near
+		0, 1, 5,
+		0, 5, 4,
+		//Far
+		2, 3, 7,
+		2, 7, 6,
+		//Left
+		3, 0, 4,
+		3, 4, 7,
+		//Right
+		1, 2, 6,
+		1, 6, 5
+	};
+	camera.set_position({0.0f, -4.0f, 0.0f});
+	camera.set_direction({0.0f, 1.0f, 0.0f});
 
 	//Memory structures
 	//Allocator
@@ -284,6 +315,11 @@ void Renderer::create_swapchain() {
 		));
 	}
 
+	camera.set_aspect_ratio(
+		static_cast<float>(surface_extent.width)
+		/ static_cast<float>(surface_extent.height)
+	);
+
 	//Create swapchain
 	vk::SharingMode sharing_mode;
 	std::vector<uint32_t> swapchain_queue_families;
@@ -340,7 +376,6 @@ void Renderer::create_swapchain() {
 	}
 
 	//Multisampling buffer
-	//TODO: Sample count determination
 	VmaAllocationCreateInfo color_image_alloc_create_info {};
 	//TODO: Lazy allocation
 	color_image_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -511,7 +546,6 @@ void Renderer::destroy_swapchain() {
 	device.destroySwapchainKHR(swapchain);
 }
 
-//TODO: Inline into create_swapchain()?
 void Renderer::create_pipelines() {
 	//Shaders
 	const auto vertex_shader = create_shader_module("shaders/basic.vert.spv");
@@ -538,7 +572,7 @@ void Renderer::create_pipelines() {
 		vk::VertexInputAttributeDescription(
 			0,
 			0,
-			vk::Format::eR32G32Sfloat,
+			vk::Format::eR32G32B32Sfloat,
 			offsetof(Vertex, position)
 		),
 		vk::VertexInputAttributeDescription(
@@ -624,7 +658,6 @@ void Renderer::create_pipelines() {
 		color_blend_attachments,
 		{0.0f, 0.0f, 0.0f, 0.0f}
 	);
-	//TODO: Dynamic state?
 	//Layout
 	const vk::PushConstantRange projection_constant(
 		vk::ShaderStageFlagBits::eVertex,
@@ -679,8 +712,6 @@ void Renderer::draw() {
 	const uint32_t image_index = device.acquireNextImageKHR(
 		swapchain, UINT64_MAX, image_available_semaphore, nullptr
 	).value;
-	//Update models
-	projection.rotate(Eigen::AngleAxisf(0.002f, Eigen::Vector3f::UnitZ()));
 	//Record command buffer
 	command_buffer.begin(vk::CommandBufferBeginInfo(
 		vk::CommandBufferUsageFlagBits::eOneTimeSubmit
@@ -704,7 +735,7 @@ void Renderer::draw() {
 		vk::ShaderStageFlagBits::eVertex,
 		0,
 		16 * sizeof(float),
-		projection.data()
+		camera.get_transform().data()
 	);
 	command_buffer.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -713,7 +744,7 @@ void Renderer::draw() {
 		descriptor_set,
 		{}
 	);
-	command_buffer.drawIndexed(6, 1, 0, 0, 0);
+	command_buffer.drawIndexed(36, 1, 0, 0, 0);
 	command_buffer.endRenderPass();
 	command_buffer.end();
 	//Submit & present

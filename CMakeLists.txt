@@ -3,18 +3,6 @@ project(Lightrail VERSION 1.0 DESCRIPTION "Lightweight game engine")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-add_executable(lightrail)
-target_include_directories(lightrail PUBLIC ./include)
-target_sources(
-	lightrail PUBLIC
-	src/main.cpp
-	src/app.cpp
-	src/renderer.cpp
-	src/buffer.cpp
-	src/image.cpp
-	src/texture.cpp
-)
-target_link_libraries(lightrail SDL2 vulkan Eigen3::Eigen)
 
 # Shaders
 set(
@@ -33,4 +21,29 @@ foreach(SHADER_SOURCE ${SHADER_SOURCES})
 	list(APPEND SHADER_FILES ${SHADER})
 endforeach()
 add_custom_target(shaders DEPENDS ${SHADER_FILES})
+
+# Main executable
+add_executable(lightrail)
+target_include_directories(lightrail PUBLIC ./include)
+target_sources(
+	lightrail PUBLIC
+	src/main.cpp
+	src/app.cpp
+	src/renderer.cpp
+	src/buffer.cpp
+	src/image.cpp
+	src/texture.cpp
+	src/camera.cpp
+)
 add_dependencies(lightrail shaders)
+target_link_libraries(lightrail SDL2 vulkan Eigen3::Eigen)
+
+# Test executable
+#add_executable(test)
+#target_include_directories(test PUBLIC ./include)
+#target_sources(
+#	test PUBLIC
+#	src/test.cpp
+#	src/camera.cpp
+#)
+#target_link_libraries(test Eigen3::Eigen)
