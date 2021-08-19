@@ -34,16 +34,23 @@ target_sources(
 	src/image.cpp
 	src/texture.cpp
 	src/camera.cpp
+	src/mesh.cpp
 )
 add_dependencies(lightrail shaders)
 target_link_libraries(lightrail SDL2 vulkan Eigen3::Eigen)
+target_precompile_headers(lightrail PRIVATE
+	<vulkan/vulkan.hpp>
+	[["vk_mem_alloc.h"]]
+	<Eigen/Core>
+	<Eigen/Geometry>
+)
 
 # Test executable
-#add_executable(test)
-#target_include_directories(test PUBLIC ./include)
-#target_sources(
-#	test PUBLIC
-#	src/test.cpp
-#	src/camera.cpp
-#)
-#target_link_libraries(test Eigen3::Eigen)
+add_executable(test)
+target_include_directories(test PUBLIC ./include)
+target_sources(
+	test PUBLIC
+	src/test.cpp
+	src/mesh.cpp
+)
+target_link_libraries(test Eigen3::Eigen)

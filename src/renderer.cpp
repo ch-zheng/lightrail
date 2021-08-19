@@ -3,6 +3,7 @@
 #include <algorithm>
 //#include <future>
 #include <fstream>
+#include <stack>
 //#include <iostream>
 using namespace lightrail;
 
@@ -31,6 +32,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	surface = c_surface;
 
 	//Physical device selection
+	//TODO: Support for separate transfer queue
 	bool device_found = false;
 	auto physical_devices = instance.enumeratePhysicalDevices();
 	for (auto& physical_device : physical_devices) {
@@ -96,12 +98,16 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 			vk::DeviceQueueCreateInfo({}, present_queue_family, 1, &queue_priority)
 		};
 	}
-	const std::vector<char const*> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+	const std::vector<char const*> device_extensions = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME
+	};
 	device = physical_device.createDevice(vk::DeviceCreateInfo(
 		{}, queue_create_infos, {}, device_extensions, {}
 	));
 	graphics_queue = device.getQueue(graphics_queue_family, 0);
 	present_queue = device.getQueue(present_queue_family, 0);
+
 	//Command pool
 	command_pool = device.createCommandPool(vk::CommandPoolCreateInfo(
 		vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -115,9 +121,11 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 			1
 		)
 	).front();
+
 	//Semaphores
 	image_available_semaphore = device.createSemaphore({});
 	render_finished_semaphore = device.createSemaphore({});
+
 	//Pipeline cache
 	std::ifstream pipeline_cache_file(
 		PIPELINE_CACHE_FILENAME,
@@ -146,47 +154,6 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	}
 	pipeline_cache_file.close();
 
-	//Render data
-	const std::array<Vertex, 8> vertices {
-		Vertex{{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}}
-	};
-	/*
-	const std::array<Vertex, 3> vertices {
-		Vertex{{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{0.0f, 0.0f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-		Vertex{{0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}}
-	};
-	*/
-	const std::array<uint16_t, 36> indices {
-		//Bottom
-		1, 0, 3,
-		1, 3, 2,
-		//Top
-		4, 5, 6,
-		4, 6, 7,
-		//Near
-		0, 1, 5,
-		0, 5, 4,
-		//Far
-		2, 3, 7,
-		2, 7, 6,
-		//Left
-		3, 0, 4,
-		3, 4, 7,
-		//Right
-		1, 2, 6,
-		1, 6, 5
-	};
-	camera.set_position({0.0f, -4.0f, 0.0f});
-	camera.set_direction({0.0f, 1.0f, 0.0f});
-
 	//Memory structures
 	//Allocator
 	VmaAllocatorCreateInfo allocator_create_info {};
@@ -195,40 +162,9 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	allocator_create_info.physicalDevice = physical_device;
 	allocator_create_info.device = device;
 	vmaCreateAllocator(&allocator_create_info, &allocator);
-	//Vertex buffer
-	const vk::BufferCreateInfo vertex_buffer_create_info(
-		{},
-		sizeof(Vertex) * vertices.size(),
-		vk::BufferUsageFlagBits::eVertexBuffer
-		| vk::BufferUsageFlagBits::eTransferDst
-	);
-	VmaAllocationCreateInfo vertex_alloc_create_info {};
-	vertex_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	vertex_buffer = Buffer(
-		vertex_buffer_create_info,
-		vertex_alloc_create_info,
-		allocator
-	);
-	vertex_buffer.staged_write(vertices.data(), command_buffer, graphics_queue);
-	//Index buffer
-	const vk::BufferCreateInfo index_buffer_create_info(
-		{},
-		sizeof(uint16_t) * indices.size(),
-		vk::BufferUsageFlagBits::eIndexBuffer
-		| vk::BufferUsageFlagBits::eTransferDst
-	);
-	VmaAllocationCreateInfo index_alloc_create_info {};
-	index_alloc_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	index_buffer = Buffer(
-		index_buffer_create_info,
-		index_alloc_create_info,
-		allocator
-	);
-	index_buffer.staged_write(indices.data(), command_buffer, graphics_queue);
-	//Depth buffer
 	//Texture
 	texture = std::unique_ptr<Texture>(new Texture(
-		"./assets/tank.bmp",
+		"./assets/stone.bmp",
 		device,
 		allocator,
 		command_buffer,
@@ -236,12 +172,42 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	));
 
 	//Descriptor layout
-	const vk::DescriptorSetLayoutBinding descriptor_layout_bindings(
-		0,
-		vk::DescriptorType::eCombinedImageSampler,
-		1,
-		vk::ShaderStageFlagBits::eFragment
-	);
+	/* Binding | Type | Name
+		0 | Combined Sampler | Texture
+		1 | Storage | Transformations
+		2 | Storage | Transformation offsets
+		3 | Uniform | Indexed transformation offset
+	*/
+	const std::array<vk::DescriptorSetLayoutBinding, 4> descriptor_layout_bindings {
+		//Combined texture sampler
+		vk::DescriptorSetLayoutBinding(
+			0,
+			vk::DescriptorType::eCombinedImageSampler,
+			1,
+			vk::ShaderStageFlagBits::eFragment
+		),
+		//Transformations
+		vk::DescriptorSetLayoutBinding(
+			1,
+			vk::DescriptorType::eStorageBuffer,
+			1,
+			vk::ShaderStageFlagBits::eVertex
+		),
+		//Transformation offsets
+		vk::DescriptorSetLayoutBinding(
+			2,
+			vk::DescriptorType::eStorageBuffer,
+			1,
+			vk::ShaderStageFlagBits::eVertex
+		),
+		//Uniform buffer object
+		vk::DescriptorSetLayoutBinding(
+			3,
+			vk::DescriptorType::eUniformBuffer,
+			1,
+			vk::ShaderStageFlagBits::eVertex
+		)
+	};
 	descriptor_layout = device.createDescriptorSetLayout(
 		vk::DescriptorSetLayoutCreateInfo(
 			{},
@@ -249,7 +215,11 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 		)
 	);
 	//Descriptor pool
-	const vk::DescriptorPoolSize descriptor_pool_sizes(vk::DescriptorType::eCombinedImageSampler, 1);
+	const std::array<vk::DescriptorPoolSize, 3> descriptor_pool_sizes {
+		vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1),
+		vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 2),
+		vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1)
+	};
 	descriptor_pool = device.createDescriptorPool(vk::DescriptorPoolCreateInfo(
 		{},
 		1,
@@ -263,7 +233,8 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 		)
 	);
 	descriptor_set = descriptor_sets[0];
-	//Update descriptor sets
+
+	//Update texture descriptor
 	const vk::DescriptorImageInfo descriptor_image_info(
 		texture->get_sampler(),
 		texture->get_image_view(),
@@ -274,9 +245,8 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 			descriptor_set,
 			0,
 			0,
-			1,
 			vk::DescriptorType::eCombinedImageSampler,
-			&descriptor_image_info
+			descriptor_image_info
 		), {}
 	);
 	
@@ -579,13 +549,13 @@ void Renderer::create_pipelines() {
 			1,
 			0,
 			vk::Format::eR32G32B32Sfloat,
-			offsetof(Vertex, color)
+			offsetof(Vertex, texture_coords)
 		),
 		vk::VertexInputAttributeDescription(
 			2,
 			0,
-			vk::Format::eR32G32Sfloat,
-			offsetof(Vertex, texture_pos)
+			vk::Format::eR32G32B32Sfloat,
+			offsetof(Vertex, normal)
 		),
 	};
 	const vk::PipelineVertexInputStateCreateInfo vertex_input(
@@ -708,7 +678,30 @@ vk::ShaderModule Renderer::create_shader_module(std::string filename) {
 	));
 }
 
+void Renderer::destroy_scene_buffers() {
+	//Draw buffers
+	std::cout << "A" << std::endl;
+	vertices.destroy();
+	std::cout << "B" << std::endl;
+	indices.destroy();
+	std::cout << "C" << std::endl;
+	draw_commands.destroy();
+	std::cout << "D" << std::endl;
+	draw_indexed_commands.destroy();
+	std::cout << "E" << std::endl;
+	//Descriptors
+	transformations.destroy();
+	std::cout << "F" << std::endl;
+	transformation_offsets.destroy();
+	std::cout << "G" << std::endl;
+	uniforms.destroy();
+	std::cout << "H" << std::endl;
+	//TODO: Textures
+}
+
 void Renderer::draw() {
+	//TODO: Deal with empty buffers
+	if (!scene_loaded) return;
 	const uint32_t image_index = device.acquireNextImageKHR(
 		swapchain, UINT64_MAX, image_available_semaphore, nullptr
 	).value;
@@ -728,15 +721,7 @@ void Renderer::draw() {
 		clear_values
 	), vk::SubpassContents::eInline);
 	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[0]);
-	command_buffer.bindVertexBuffers(0, static_cast<const vk::Buffer>(vertex_buffer), {0});
-	command_buffer.bindIndexBuffer(static_cast<const vk::Buffer>(index_buffer), 0, vk::IndexType::eUint16);
-	command_buffer.pushConstants(
-		pipeline_layout,
-		vk::ShaderStageFlagBits::eVertex,
-		0,
-		16 * sizeof(float),
-		camera.get_transform().data()
-	);
+	//Descriptors
 	command_buffer.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
 		pipeline_layout,
@@ -744,7 +729,34 @@ void Renderer::draw() {
 		descriptor_set,
 		{}
 	);
-	command_buffer.drawIndexed(36, 1, 0, 0, 0);
+	command_buffer.pushConstants(
+		pipeline_layout,
+		vk::ShaderStageFlagBits::eVertex,
+		0,
+		16 * sizeof(float),
+		camera.get_transform().data()
+	);
+	//Drawing
+	const vk::Buffer vertex_buffer(static_cast<const vk::Buffer>(vertices));
+	if (vertex_buffer) {
+		command_buffer.bindVertexBuffers(0, vertex_buffer, {0});
+		command_buffer.drawIndirect(
+			static_cast<const vk::Buffer>(draw_commands),
+			0,
+			draw_command_count,
+			sizeof(vk::DrawIndirectCommand)
+		);
+	}
+	const vk::Buffer index_buffer(static_cast<const vk::Buffer>(indices));
+	if (index_buffer) {
+		command_buffer.bindIndexBuffer(index_buffer, 0, vk::IndexType::eUint16);
+		command_buffer.drawIndexedIndirect(
+			static_cast<const vk::Buffer>(draw_commands),
+			0,
+			draw_indexed_command_count,
+			sizeof(vk::DrawIndexedIndirectCommand)
+		);
+	}
 	command_buffer.endRenderPass();
 	command_buffer.end();
 	//Submit & present
@@ -770,6 +782,303 @@ void Renderer::wait() {
 	present_queue.waitIdle();
 }
 
+void Renderer::load_scene(const Scene& scene) {
+	//Collect drawable objects
+	std::vector<Drawable> drawables;
+	std::stack<std::pair<Node, Eigen::Affine3f>> pending;
+	for (const auto& node : scene.nodes)
+		pending.push({node, Eigen::Affine3f::Identity()});
+	while (!pending.empty()) {
+		const auto& current = pending.top();
+		const Eigen::Affine3f t = current.second * current.first.transformation;
+		if (current.first.mesh >= 0) {
+			Drawable d;
+			d.mesh = current.first.mesh;
+			d.transformation = t;
+			drawables.push_back(d);
+		}
+		for (const auto& node : current.first.children)
+			pending.push({node, t});
+		pending.pop();
+	}
+	//Sort drawables (ascending by mesh, non-indexed before indexed)
+	std::sort(
+		drawables.begin(),
+		drawables.end(),
+		[&scene](Drawable a, Drawable b) {
+			bool a_ni = scene.meshes[a.mesh].indices.empty(),
+				b_ni = scene.meshes[b.mesh].indices.empty();
+			if (a_ni && !b_ni) return true;
+			else if (!a_ni && b_ni) return false;
+			else return a.mesh < b.mesh;
+		}
+	);
+	//Catalog drawables
+	std::vector<Eigen::Affine3f> transformations;
+	transformations.reserve(drawables.size());
+	std::vector<uint32_t> mesh_counts(scene.meshes.size(), 0);
+	uint32_t indexed_transformation_offset = 0;
+	for (const auto& drawable : drawables) {
+		transformations.push_back(drawable.transformation);
+		mesh_counts[drawable.mesh] += 1;
+		if (!scene.meshes[drawable.mesh].indices.empty())
+			++indexed_transformation_offset;
+	}
+
+	//Load meshes
+	std::vector<Vertex> vertices, indexed_vertices;
+	std::vector<uint16_t> indices;
+	std::vector<vk::DrawIndirectCommand> draw_commands;
+	std::vector<vk::DrawIndexedIndirectCommand> draw_indexed_commands;
+	for (size_t i = 0; i < scene.meshes.size(); ++i) {
+		const auto& mesh = scene.meshes[i];
+		if (mesh.indices.empty()) {
+			//Non-indexed mesh
+			//Append command
+			draw_commands.push_back(vk::DrawIndirectCommand(
+				mesh.vertices.size(),
+				mesh_counts[i],
+				vertices.size()
+			));
+			//Append vertices
+			vertices.reserve(mesh.vertices.size());
+			vertices.insert(
+				vertices.end(),
+				mesh.vertices.begin(),
+				mesh.vertices.end()
+			);
+		} else {
+			//Indexed mesh
+			//Append command
+			draw_indexed_commands.push_back(vk::DrawIndexedIndirectCommand(
+				mesh.indices.size(),
+				mesh_counts[i],
+				indices.size(),
+				indexed_vertices.size()
+			));
+			//Append vertices
+			indexed_vertices.reserve(mesh.vertices.size());
+			indexed_vertices.insert(
+				indexed_vertices.end(),
+				mesh.vertices.begin(),
+				mesh.vertices.end()
+			);
+			//Append indices
+			indices.reserve(mesh.indices.size());
+			indices.insert(
+				indices.end(),
+				mesh.indices.begin(),
+				mesh.indices.end()
+			);
+		}
+	}
+	for (auto& cmd : draw_indexed_commands)
+		cmd.vertexOffset += vertices.size();
+
+	//Generate offsets
+	std::vector<uint32_t> transformation_offsets;
+	transformation_offsets.reserve(scene.meshes.size());
+	uint32_t sum = 0;
+	for (const auto& cmd : draw_commands) {
+		transformation_offsets.push_back(sum);
+		sum += cmd.instanceCount;
+	}
+	for (const auto& cmd : draw_indexed_commands) {
+		transformation_offsets.push_back(sum);
+		sum += cmd.instanceCount;
+	}
+	draw_command_count = draw_commands.size();
+	draw_indexed_command_count = draw_indexed_commands.size();
+	//Uniforms
+	uint32_t indexed_vertex_offset = vertices.size();
+	std::array<uint32_t, 2> uniforms {
+		indexed_vertex_offset,
+		indexed_transformation_offset
+	};
+
+	//Write to buffers
+	//TODO: Parallelization
+	if (scene_loaded) destroy_scene_buffers(); //Destroy previous scene
+	//Shared allocation create info
+	VmaAllocationCreateInfo alloc_create_info {};
+	alloc_create_info.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+	//Vertex buffer
+	//Merge vertices
+	vertices.reserve(indexed_vertices.size());
+	vertices.insert(
+		vertices.end(),
+		indexed_vertices.begin(),
+		indexed_vertices.end()
+	);
+	const vk::BufferCreateInfo vertex_buffer_create_info(
+		{},
+		vertices.size() * sizeof(Vertex),
+		vk::BufferUsageFlagBits::eVertexBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
+	);
+	this->vertices = Buffer(
+		vertex_buffer_create_info,
+		alloc_create_info,
+		allocator
+	);
+	this->vertices.staged_write(
+		vertices.data(),
+		command_buffer,
+		graphics_queue
+	);
+	//Index buffer
+	const vk::BufferCreateInfo index_buffer_create_info(
+		{},
+		indices.size() * sizeof(uint16_t),
+		vk::BufferUsageFlagBits::eIndexBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
+	);
+	this->indices = Buffer(
+		index_buffer_create_info,
+		alloc_create_info,
+		allocator
+	);
+	this->indices.staged_write(
+		indices.data(),
+		command_buffer,
+		graphics_queue
+	);
+	//Draw commands
+	const vk::BufferCreateInfo draw_command_buffer_create_info(
+		{},
+		draw_commands.size() * sizeof(vk::DrawIndirectCommand),
+		vk::BufferUsageFlagBits::eIndirectBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
+	);
+	this->draw_commands = Buffer(
+		draw_command_buffer_create_info,
+		alloc_create_info,
+		allocator
+	);
+	this->draw_commands.staged_write(
+		draw_commands.data(),
+		command_buffer,
+		graphics_queue
+	);
+	//Indexed draw commands
+	const vk::BufferCreateInfo draw_indexed_command_buffer_create_info(
+		{},
+		draw_indexed_commands.size() * sizeof(vk::DrawIndexedIndirectCommand),
+		vk::BufferUsageFlagBits::eIndirectBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
+	);
+	this->draw_indexed_commands = Buffer(
+		draw_indexed_command_buffer_create_info,
+		alloc_create_info,
+		allocator
+	);
+	this->draw_indexed_commands.staged_write(
+		draw_indexed_commands.data(),
+		command_buffer,
+		graphics_queue
+	);
+
+	//Descriptor buffers
+	//Transformation buffer
+	const vk::BufferCreateInfo transform_buffer_create_info(
+		{},
+		transformations.size() * sizeof(Eigen::Affine3f),
+		vk::BufferUsageFlagBits::eStorageBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
+	);
+	this->transformations = Buffer(
+		transform_buffer_create_info,
+		alloc_create_info,
+		allocator
+	);
+	this->transformations.staged_write(
+		transformations.data(),
+		command_buffer,
+		graphics_queue
+	);
+	//Transformation offsets
+	const vk::BufferCreateInfo transform_offset_buffer_create_info(
+		{},
+		transformation_offsets.size() * sizeof(uint32_t),
+		vk::BufferUsageFlagBits::eStorageBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
+	);
+	Buffer transform_offset_buffer(
+		transform_offset_buffer_create_info,
+		alloc_create_info,
+		allocator
+	);
+	transform_offset_buffer.staged_write(
+		transformation_offsets.data(),
+		command_buffer,
+		graphics_queue
+	);
+	//Uniforms
+	const vk::BufferCreateInfo indexed_offset_buffer_create_info(
+		{},
+		uniforms.size() * sizeof(uint32_t),
+		vk::BufferUsageFlagBits::eUniformBuffer
+		| vk::BufferUsageFlagBits::eTransferDst
+	);
+	Buffer indexed_offset_buffer(
+		indexed_offset_buffer_create_info,
+		alloc_create_info,
+		allocator
+	);
+	indexed_offset_buffer.staged_write(
+		uniforms.data(),
+		command_buffer,
+		graphics_queue
+	);
+
+	//Update descriptor set
+	const vk::DescriptorBufferInfo transform_descriptor_info(
+		this->transformations,
+		0,
+		VK_WHOLE_SIZE
+	);
+	const vk::DescriptorBufferInfo transform_offset_descriptor_info(
+		transform_offset_buffer,
+		0,
+		VK_WHOLE_SIZE
+	);
+	const vk::DescriptorBufferInfo indexed_offset_descriptor_info(
+		indexed_offset_buffer,
+		0,
+		VK_WHOLE_SIZE
+	);
+	const std::array<vk::WriteDescriptorSet, 3> descriptor_set_write {
+		vk::WriteDescriptorSet(
+			descriptor_set,
+			1,
+			0,
+			vk::DescriptorType::eStorageBuffer,
+			{},
+			transform_descriptor_info
+		),
+		vk::WriteDescriptorSet(
+			descriptor_set,
+			2,
+			0,
+			vk::DescriptorType::eStorageBuffer,
+			{},
+			transform_offset_descriptor_info
+		),
+		vk::WriteDescriptorSet(
+			descriptor_set,
+			3,
+			0,
+			vk::DescriptorType::eUniformBuffer,
+			{},
+			indexed_offset_descriptor_info
+		),
+	};
+	device.updateDescriptorSets(descriptor_set_write, {});
+
+	//TODO: Load textures
+	scene_loaded = true;
+}
+
 Renderer::~Renderer() {
 	device.waitIdle();
 	//Descriptors
@@ -777,8 +1086,9 @@ Renderer::~Renderer() {
 	device.destroyDescriptorSetLayout(descriptor_layout);
 	//Memory structures
 	texture->destroy();
-	index_buffer.destroy();
-	vertex_buffer.destroy();
+	std::cout << "Alpha" << std::endl;
+	destroy_scene_buffers();
+	std::cout << "Bravo" << std::endl;
 	//Save pipeline cache
 	std::ofstream pipeline_cache_file(PIPELINE_CACHE_FILENAME, std::ofstream::binary);
 	auto pipeline_cache_data = device.getPipelineCacheData(pipeline_cache);

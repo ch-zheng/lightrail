@@ -2,16 +2,17 @@
 #include "buffer.hpp"
 #include "texture.hpp"
 #include "camera.hpp"
+#include "scene.hpp"
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL2/SDL_vulkan.h>
 #include <Eigen/Geometry>
 
 namespace lightrail {
-	struct Vertex {
-		std::array<float, 3> position;
-		std::array<float, 3> color;
-		std::array<float, 2> texture_pos;
+	struct Drawable {
+		size_t mesh;
+		//ssize_t texture; //Custom texture
+		Eigen::Affine3f transformation = Eigen::Affine3f::Identity();
 	};
 
 	class Renderer {
@@ -32,8 +33,15 @@ namespace lightrail {
 		
 		//Memory structures
 		VmaAllocator allocator;
-		Buffer vertex_buffer;
-		Buffer index_buffer;
+		bool scene_loaded = false;
+		//Draw buffers
+		Buffer vertices, indices;
+		Buffer draw_commands, draw_indexed_commands;
+		size_t draw_command_count, draw_indexed_command_count;
+		//Descriptors
+		Buffer transformations, transformation_offsets, uniforms;
+		//Textures
+		//std::vector<Texture> textures; TODO
 		std::unique_ptr<Texture> texture;
 
 		//Descriptors
@@ -58,6 +66,7 @@ namespace lightrail {
 		void destroy_swapchain();
 		void create_pipelines();
 		vk::ShaderModule create_shader_module(std::string);
+		void destroy_scene_buffers();
 
 		public:
 		Camera camera;
@@ -65,6 +74,7 @@ namespace lightrail {
 		Renderer(SDL_Window*);
 		void draw();
 		void wait();
+		void load_scene(const Scene&);
 		~Renderer();
 	};
 }

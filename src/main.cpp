@@ -11,6 +11,19 @@ int main() {
 	auto window_flags = SDL_GetWindowFlags(app.get_window());
 	bool shown = window_flags & SDL_WINDOW_SHOWN;
 	bool minimized = window_flags & SDL_WINDOW_MINIMIZED;
+	//Generate scene
+	Scene scene;
+	Node node;
+	Mesh mesh;
+	mesh.vertices = {
+		{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}},
+		{{1, 0, 0}, {1, 0, 0}, {0, 0, 0}},
+		{{0, 0, 1}, {0, 0, 0}, {0, 0, 0}}
+	};
+	node.mesh = 0;
+	scene.nodes.push_back(node);
+	scene.meshes.push_back(mesh);
+	app.renderer->load_scene(scene);
 	//Scene information
 	Camera& camera = app.renderer->camera;
 	float h_rotation = 0, v_rotation = 0;
@@ -59,14 +72,14 @@ int main() {
 		if (keyboard_state[SDL_SCANCODE_S]) v_rotation -= 0.001f * delta.count();
 		if (keyboard_state[SDL_SCANCODE_A]) h_rotation -= 0.001f * delta.count();
 		if (keyboard_state[SDL_SCANCODE_D]) h_rotation += 0.001f * delta.count();
-		/*
+		/* TODO: Angle rollover
 		v_rotation = fmod(v_rotation, M_PI_2);
 		h_rotation = fmod(h_rotation, M_PI_2);
 		*/
 		Eigen::Affine3f t = Eigen::Affine3f::Identity();
 		t.prerotate(Eigen::AngleAxisf(v_rotation, Eigen::Vector3f(1.0f, 0.0f, 0.0f)));
 		t.prerotate(Eigen::AngleAxisf(h_rotation, Eigen::Vector3f(0.0f, 0.0f, 1.0f)));
-		camera.set_position(t * Eigen::Vector3f(0.0f, 4.0f, 0.0f));
+		camera.set_position(t * Eigen::Vector3f(0.0f, -4.0f, 0.0f));
 		camera.look_at(Eigen::Vector3f::Zero());
 		//Rendering
 		if (shown && !minimized) {

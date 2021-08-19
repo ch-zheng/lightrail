@@ -7,7 +7,7 @@ namespace lightrail {
 		vk::Buffer buffer;
 		VmaAllocation alloc;
 		size_t size;
-		const VmaAllocator* allocator;
+		const VmaAllocator* allocator = nullptr;
 
 		public:
 		Buffer() = default;

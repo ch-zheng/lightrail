@@ -1,12 +1,16 @@
 #version 450
-layout(location = 0) in vec3 fragColor;
-layout(location = 1) in vec2 texCoord;
 
-layout(binding = 0) uniform sampler2D texSampler;
+//Inputs
+layout(location=0) in vec3 in_texCoords;
 
-layout(location = 0) out vec4 outColor;
+//Descriptors
+layout(set=0, binding=0) uniform sampler2D texSampler;
+
+//Outputs
+layout(location=0) out vec4 out_color;
 
 void main() {
-	outColor = vec4(fragColor, 1.0);
-	//outColor = texture(texSampler, texCoord);
+	out_color = texture(texSampler, in_texCoords.st);
+	//out_color = vec4(1.0, 0.0, 0.0, 1.0); //DEBUG
+	//out_color = vec4(in_texCoords.st, 1.0, 1.0); //DEBUG
 }

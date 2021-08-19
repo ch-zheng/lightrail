@@ -29,6 +29,7 @@ void Buffer::staged_write(
 	const void* data,
 	const vk::CommandBuffer& command_buffer,
 	const vk::Queue& queue) {
+	if (!size) return;
 	//Create staging buffer
 	const vk::BufferCreateInfo staging_buffer_create_info(
 		{},
@@ -60,5 +61,5 @@ void Buffer::staged_write(
 }
 
 void Buffer::destroy() {
-	vmaDestroyBuffer(*allocator, buffer, alloc);
+	if (buffer) vmaDestroyBuffer(*allocator, buffer, alloc);
 }
