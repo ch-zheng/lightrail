@@ -8,6 +8,7 @@ Buffer::Buffer(
 	const VmaAllocationCreateInfo& alloc_create_info,
 	const VmaAllocator& allocator)
 	: allocator(&allocator), size(buffer_create_info.size) {
+	if (!size) return;
 	vmaCreateBuffer(
 		allocator,
 		reinterpret_cast<const VkBufferCreateInfo*>(&buffer_create_info),
@@ -61,5 +62,5 @@ void Buffer::staged_write(
 }
 
 void Buffer::destroy() {
-	if (buffer) vmaDestroyBuffer(*allocator, buffer, alloc);
+	if (size) vmaDestroyBuffer(*allocator, buffer, alloc);
 }

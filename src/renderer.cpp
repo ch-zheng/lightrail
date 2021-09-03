@@ -252,6 +252,7 @@ Renderer::Renderer(SDL_Window *window) : window(window) {
 	
 	//Swapchain
 	create_swapchain();
+
 }
 
 void Renderer::create_swapchain() {
@@ -680,22 +681,17 @@ vk::ShaderModule Renderer::create_shader_module(std::string filename) {
 
 void Renderer::destroy_scene_buffers() {
 	//Draw buffers
-	std::cout << "A" << std::endl;
 	vertices.destroy();
-	std::cout << "B" << std::endl;
 	indices.destroy();
-	std::cout << "C" << std::endl;
 	draw_commands.destroy();
-	std::cout << "D" << std::endl;
 	draw_indexed_commands.destroy();
-	std::cout << "E" << std::endl;
 	//Descriptors
 	transformations.destroy();
-	std::cout << "F" << std::endl;
+	printf("BRINK\n");
 	transformation_offsets.destroy();
-	std::cout << "G" << std::endl;
+	printf("MARK\n");
 	uniforms.destroy();
-	std::cout << "H" << std::endl;
+	printf("FINAL MARK\n");
 	//TODO: Textures
 }
 
@@ -897,7 +893,7 @@ void Renderer::load_scene(const Scene& scene) {
 	};
 
 	//Write to buffers
-	//TODO: Parallelization
+	//TODO: Parallelization with synchronization
 	if (scene_loaded) destroy_scene_buffers(); //Destroy previous scene
 	//Shared allocation create info
 	VmaAllocationCreateInfo alloc_create_info {};
@@ -1003,29 +999,29 @@ void Renderer::load_scene(const Scene& scene) {
 		vk::BufferUsageFlagBits::eStorageBuffer
 		| vk::BufferUsageFlagBits::eTransferDst
 	);
-	Buffer transform_offset_buffer(
+	this->transformation_offsets = Buffer(
 		transform_offset_buffer_create_info,
 		alloc_create_info,
 		allocator
 	);
-	transform_offset_buffer.staged_write(
+	this->transformation_offsets.staged_write(
 		transformation_offsets.data(),
 		command_buffer,
 		graphics_queue
 	);
 	//Uniforms
-	const vk::BufferCreateInfo indexed_offset_buffer_create_info(
+	const vk::BufferCreateInfo uniform_buffer_create_info(
 		{},
 		uniforms.size() * sizeof(uint32_t),
 		vk::BufferUsageFlagBits::eUniformBuffer
 		| vk::BufferUsageFlagBits::eTransferDst
 	);
-	Buffer indexed_offset_buffer(
-		indexed_offset_buffer_create_info,
+	this->uniforms = Buffer(
+		uniform_buffer_create_info,
 		alloc_create_info,
 		allocator
 	);
-	indexed_offset_buffer.staged_write(
+	this->uniforms.staged_write(
 		uniforms.data(),
 		command_buffer,
 		graphics_queue
@@ -1038,12 +1034,12 @@ void Renderer::load_scene(const Scene& scene) {
 		VK_WHOLE_SIZE
 	);
 	const vk::DescriptorBufferInfo transform_offset_descriptor_info(
-		transform_offset_buffer,
+		this->transformation_offsets,
 		0,
 		VK_WHOLE_SIZE
 	);
-	const vk::DescriptorBufferInfo indexed_offset_descriptor_info(
-		indexed_offset_buffer,
+	const vk::DescriptorBufferInfo uniform_descriptor_info(
+		this->uniforms,
 		0,
 		VK_WHOLE_SIZE
 	);
@@ -1070,7 +1066,7 @@ void Renderer::load_scene(const Scene& scene) {
 			0,
 			vk::DescriptorType::eUniformBuffer,
 			{},
-			indexed_offset_descriptor_info
+			uniform_descriptor_info
 		),
 	};
 	device.updateDescriptorSets(descriptor_set_write, {});
@@ -1086,9 +1082,7 @@ Renderer::~Renderer() {
 	device.destroyDescriptorSetLayout(descriptor_layout);
 	//Memory structures
 	texture->destroy();
-	std::cout << "Alpha" << std::endl;
 	destroy_scene_buffers();
-	std::cout << "Bravo" << std::endl;
 	//Save pipeline cache
 	std::ofstream pipeline_cache_file(PIPELINE_CACHE_FILENAME, std::ofstream::binary);
 	auto pipeline_cache_data = device.getPipelineCacheData(pipeline_cache);
@@ -1108,4 +1102,5 @@ Renderer::~Renderer() {
 	device.destroy();
 	instance.destroySurfaceKHR(surface);
 	instance.destroy();
+	printf("Everything destroyed\n");
 }

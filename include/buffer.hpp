@@ -16,6 +16,7 @@ namespace lightrail {
 			const VmaAllocationCreateInfo&,
 			const VmaAllocator&
 		);
+		size_t get_size() {return size;}
 		operator const vk::Buffer&() const {return buffer;}
 		void write(const void*);
 		void staged_write(const void*, const vk::CommandBuffer&, const vk::Queue&);
