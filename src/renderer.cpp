@@ -687,11 +687,8 @@ void Renderer::destroy_scene_buffers() {
 	draw_indexed_commands.destroy();
 	//Descriptors
 	transformations.destroy();
-	printf("BRINK\n");
 	transformation_offsets.destroy();
-	printf("MARK\n");
 	uniforms.destroy();
-	printf("FINAL MARK\n");
 	//TODO: Textures
 }
 
@@ -1102,5 +1099,4 @@ Renderer::~Renderer() {
 	device.destroy();
 	instance.destroySurfaceKHR(surface);
 	instance.destroy();
-	printf("Everything destroyed\n");
 }

@@ -15,6 +15,6 @@ namespace lightrail {
 		std::vector<Mesh> meshes;
 		std::vector<std::string> textures;
 
-		//static std::vector<Scene> load_gltf(std::string);
+		static std::vector<Scene> load_gltf(std::string);
 	};
 }
