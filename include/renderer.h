@@ -1,16 +1,10 @@
 #pragma once
+#include "alloc.h"
 #include <stdbool.h>
 #include <SDL2/SDL.h>
 #include <vulkan/vulkan.h>
 
-const char* PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
-
-struct AllocBlock {
-	VkDevice* device;
-	VkDeviceMemory* memory;
-	unsigned count;
-	VkDeviceSize* offsets;
-};
+static const char* const PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
 
 struct Renderer {
 	SDL_Window* window;
@@ -25,7 +19,12 @@ struct Renderer {
 	VkSemaphore semaphores[2];
 	//VkSampleCountFlagBits sample_count;
 	//VkPipelineCache pipeline_cache;
+
+	//Swapchain
+	VkExtent2D surface_extent;
 	VkSwapchainKHR swapchain;
+	uint32_t swapchain_image_count;
+	VkImage* swapchain_images;
 
 	//Resolution-dependent structs
 	VkExtent2D resolution;

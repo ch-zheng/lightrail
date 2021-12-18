@@ -10,6 +10,8 @@ set(
 	SHADER_SOURCES
 	shaders/basic.vert
 	shaders/basic.frag
+	shaders/test.vert
+	shaders/test.frag
 )
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 foreach(SHADER_SOURCE ${SHADER_SOURCES})

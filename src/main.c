@@ -1,8 +1,11 @@
+#include "renderer.h"
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
 
 #include <SDL2/SDL.h>
+#include <unistd.h>
 
 int main() {
 	//SDL Initialization
@@ -26,6 +29,10 @@ int main() {
 	Uint32 window_flags = SDL_GetWindowFlags(window);
 	bool shown = window_flags & SDL_WINDOW_SHOWN;
 	bool minimized = window_flags & SDL_WINDOW_MINIMIZED;
+
+	//Renderer
+	struct Renderer renderer;
+	create_renderer(window, &renderer);
 
 	//Main loop
 	bool running = true;
@@ -67,9 +74,11 @@ int main() {
 		}
 		//Rendering
 		if (shown && !minimized) {
-			//TODO: Draw
+			renderer_draw(&renderer);
 		} else {
-			//TODO: Sleep
+			sleep(1);
 		}
 	}
+
+	destroy_renderer(&renderer);
 }
