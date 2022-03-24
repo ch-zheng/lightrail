@@ -1,6 +1,7 @@
 #include "renderer.h"
+#include "vulkan/vulkan_core.h"
 #include <stdio.h>
-#include <SDL2/SDL_vulkan.h>
+#include <SDL_vulkan.h>
 #include <cglm/mat4.h>
 
 #define REQUIRED_EXT_COUNT 1
@@ -102,7 +103,7 @@ static VkResult create_pipeline(struct Renderer* const r) {
 	//Multisampling
 	const VkPipelineMultisampleStateCreateInfo multisample = {
 		VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, NULL, 0,
-		VK_SAMPLE_COUNT_8_BIT,
+		VK_SAMPLE_COUNT_4_BIT,
 		false,
 		1,
 		NULL,
@@ -646,7 +647,7 @@ VkResult renderer_create_resolution(
 			extent_3d,
 			1,
 			1,
-			VK_SAMPLE_COUNT_8_BIT, //TODO: Multisampling
+			VK_SAMPLE_COUNT_4_BIT, //TODO: Multisampling
 			VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 			VK_SHARING_MODE_EXCLUSIVE,
@@ -677,7 +678,7 @@ VkResult renderer_create_resolution(
 			extent_3d,
 			1,
 			1,
-			VK_SAMPLE_COUNT_8_BIT,
+			VK_SAMPLE_COUNT_4_BIT,
 			VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 			VK_SHARING_MODE_EXCLUSIVE,
