@@ -3,7 +3,7 @@
 #include "camera.h"
 #include "scene.h"
 #include <stdbool.h>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <vulkan/vulkan.h>
 
 static const char* const PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
