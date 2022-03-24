@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 project(Lightrail
 	VERSION 1.0
-	DESCRIPTION "Lightweight game engine"
+	DESCRIPTION "3D renderer"
 	LANGUAGES C
 )
 
@@ -34,6 +34,18 @@ target_sources(
 	src/main.c
 	src/renderer.c
 	src/alloc.c
+	src/camera.c
+	src/scene.c
 )
 add_dependencies(lightrail shaders)
-target_link_libraries(lightrail SDL2 vulkan)
+target_link_libraries(lightrail SDL2 vulkan cglm m)
+
+# Testing
+add_executable(test)
+target_include_directories(test PUBLIC ./include)
+target_sources(
+	test PUBLIC
+	src/test.c
+	src/scene.c
+)
+set_property(TARGET test PROPERTY C_STANDARD 17)
