@@ -552,11 +552,11 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	//TODO: Pipeline cache
 
 	create_swapchain(&r, false);
-	renderer_create_resolution(&r, 64, 64); //TODO: Resolution setting
+	renderer_create_resolution(&r, 256, 256); //TODO: Resolution setting
 
 	//Camera
 	r.camera = (struct Camera) {
-		{0, -8, 0},
+		{0, -2, 0},
 		{0, 1, 0},
 		{0, 0, 1},
 		90, 1, 1, 64,
@@ -567,7 +567,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	const struct Vertex vertices[3] = {
 		{{0,0,0}, {0,0,0}, {0,0,0}},
 		{{0.5,0,0}, {0,0,0}, {0,0,0}},
-		{{0,-0.5,0}, {0,0,0}, {0,0,0}},
+		{{0,0,0.5}, {0,0,0}, {0,0,0}},
 	};
 	const unsigned indices[3] = {0, 1, 2};
 	const VkBufferCreateInfo vertex_buffer_infos[2] = {
@@ -871,8 +871,8 @@ void renderer_draw(struct Renderer* const r) {
 	//TODO: Bind descriptors
 	//Push constants
 	//TODO: Camera transformation
-	mat4 camera = GLM_MAT4_IDENTITY_INIT;
-	//camera_transform(r->camera, camera);
+	mat4 camera;
+	camera_transform(r->camera, camera);
 	vkCmdPushConstants(
 		r->command_buffer,
 		r->pipeline_layout,
