@@ -1,7 +1,7 @@
 #include "renderer.h"
 #include "vulkan/vulkan_core.h"
 #include <stdio.h>
-#include <SDL_vulkan.h>
+#include <SDL2/SDL_vulkan.h>
 #include <cglm/mat4.h>
 
 #define REQUIRED_EXT_COUNT 1
