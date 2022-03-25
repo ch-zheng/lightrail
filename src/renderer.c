@@ -4,6 +4,9 @@
 #include <SDL_vulkan.h>
 #include <cglm/mat4.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb/stb_image.h"
+
 #define REQUIRED_EXT_COUNT 1
 
 static VkShaderModule create_shader_module(
@@ -93,7 +96,7 @@ static VkResult create_pipeline(struct Renderer* const r) {
 		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, NULL, 0,
 		false,
 		false,
-		VK_POLYGON_MODE_FILL,
+		VK_POLYGON_MODE_LINE,
 		VK_CULL_MODE_BACK_BIT,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		false,
@@ -576,6 +579,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 	uint32_t total_indices = 0;
 	for (int i = 0; i < scene->mesh_count; ++i) {
 		struct Mesh mesh = scene->meshes[i];
+		// printf("%d total vertices\n", mesh.vertex_count);
 		total_vertices += mesh.vertex_count;	
 		total_indices += mesh.index_count;
 	}
@@ -629,7 +633,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		r.index_indices[i] = index_offset;
 	}
 	r.mesh_count = scene->mesh_count;
-
+	printf("%d\n", r.mesh_count);
 	staged_buffer_write(
 		&r.physical_device,
 		&r.device,
@@ -637,6 +641,67 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		&r.graphics_queue,
 		2, r.vertex_buffers, datas, sizes
 	);
+
+	// textures
+
+	int tex_width;
+	int tex_height;
+	int tex_channels;
+
+	stbi_uc* pixels = stbi_load("../models/viking_room/viking_room.png", &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
+	VkDeviceSize image_size = tex_width * tex_height * 4;
+
+	if (!pixels) {
+		return true;
+	}
+
+	VkBufferCreateInfo tex_stage_buff_info = {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		.sharingMode = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		.size = image_size,
+	};
+
+	// create_buffers(
+	// 	&r.physical_device,
+	// 	&r.device,
+	// 	1, &tex_stage_buff_info,
+	// 	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	// 	r.texture_buffer,
+	// 	&r.vertex_alloc
+	// );
+
+	// void* texture_data = malloc(image_size);
+	// memcpy(texture_data, pixels, image_size);
+	
+	// staged_buffer_write(
+	// 	&r.physical_device,
+	// 	&r.device,
+	// 	&r.command_buffer,
+	// 	&r.graphics_queue,
+	// 	1, r.texture_buffer, texture_data, &image_size
+	// );
+
+	// VkImageCreateInfo texture_image_info = {
+	// 	.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+	// 	.imageType = VK_IMAGE_TYPE_2D,
+	// 	.extent.width = (uint32_t) tex_width,
+	// 	.extent.height = (uint32_t) tex_height,
+	// 	.extent.depth = 1,
+	// 	.mipLevels = 1,
+	// 	.arrayLayers = 1,
+	// 	.format = VK_FORMAT_R8G8B8_SRGB,
+	// 	.tiling = VK_IMAGE_TILING_OPTIMAL,
+	// 	.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+	// 	.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+	// 	.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+	// 	.samples = VK_SAMPLE_COUNT_1_BIT,
+	// };
+
+	// vkCreateImage(r.device, &texture_image_info, NULL, &r.texture_image);
+
+
+	stbi_image_free(pixels);
 
 	*result = r;
 	return false;
