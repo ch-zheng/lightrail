@@ -929,7 +929,7 @@ void renderer_draw(struct Renderer* const r) {
 	for (int i = 0; i < r->mesh_count; ++i) {
 		uint32_t lower = i == 0 ? 0 : r->index_indices[i-1];
 		uint32_t upper = r->index_indices[i];
-		vkCmdDrawIndexed(r->command_buffer, 2904, 1, lower, r->vertex_indices[i], 0);
+		vkCmdDrawIndexed(r->command_buffer, upper - lower, 1, lower, r->vertex_indices[i], 0);
 	}
 	// vkCmdDrawIndexed(r->command_buffer, 500, 1, 0, 0, 0);
 	vkCmdEndRenderPass(r->command_buffer);
