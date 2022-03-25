@@ -42,10 +42,14 @@ struct Renderer {
 	struct Camera camera;
 	VkBuffer vertex_buffers[2];
 	struct Allocation vertex_alloc;
+
+	uint32_t mesh_count;
+	uint32_t* index_indices;
+	uint32_t* vertex_indices;
 };
 
 //Renderer methods
-bool create_renderer(SDL_Window*, struct Renderer* const);
+bool create_renderer(SDL_Window*, struct Renderer* const, struct Scene* scene);
 void destroy_renderer(struct Renderer* const);
 VkResult renderer_create_resolution(struct Renderer* const, unsigned, unsigned);
 void renderer_destroy_resolution(struct Renderer* const);

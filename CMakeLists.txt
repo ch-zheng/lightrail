@@ -8,6 +8,7 @@ project(Lightrail
 find_package(Vulkan REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(cglm REQUIRED)
+find_package(assimp REQUIRED)
 
 # Shaders
 set(
@@ -33,7 +34,11 @@ add_custom_target(shaders DEPENDS ${SHADER_FILES})
 add_executable(lightrail)
 set_property(TARGET lightrail PROPERTY C_STANDARD 17)
 target_include_directories(lightrail PUBLIC ./include)
-target_include_directories(lightrail PRIVATE ${Vulkan_INCLUDE_DIRS} ${SDL2_INCLUDE_DIRS} ${cglm_INCLUDE_DIRS})
+# if(APPLE)
+	target_include_directories(lightrail PRIVATE /opt/homebrew/include)
+# endif(APPLE)
+message(STATUS ${ASSIMP_LIBRARIES})
+target_include_directories(lightrail PRIVATE /opt/homebrew/include ${Vulkan_INCLUDE_DIRS} ${SDL2_INCLUDE_DIRS} ${cglm_INCLUDE_DIRS} ${ASSIMP_INCLUDE_DIRS})
 target_sources(
 	lightrail PUBLIC
 	src/main.c
@@ -43,12 +48,13 @@ target_sources(
 	src/scene.c
 )
 add_dependencies(lightrail shaders)
-target_link_libraries(lightrail ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} m)
+target_link_libraries(lightrail ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} ${ASSIMP_LIBRARIES})
 
 # Testing
 add_executable(test)
-target_include_directories(test PRIVATE ${Vulkan_INCLUDE_DIRECTORIES} ${SDL2_INCLUDE_DIRECTORIES} ${cglm_INCLUDE_DIRECTORIES})
+target_include_directories(test PRIVATE ${Vulkan_INCLUDE_DIRECTORIES} ${SDL2_INCLUDE_DIRECTORIES} ${cglm_INCLUDE_DIRECTORIES} ${ASSIMP_INCLUDE_DIRS})
 target_include_directories(test PUBLIC ./include)
+target_link_libraries(test ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} ${ASSIMP_LIBRARIES})
 target_sources(
 	test PUBLIC
 	src/test.c

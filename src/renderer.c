@@ -29,8 +29,8 @@ static VkShaderModule create_shader_module(
 
 static VkResult create_pipeline(struct Renderer* const r) {
 	//Shaders
-	const VkShaderModule vertex_shader = create_shader_module(r, "shaders/basic.vert.spv"),
-		fragment_shader = create_shader_module(r, "shaders/basic.frag.spv");
+	const VkShaderModule vertex_shader = create_shader_module(r, "/Users/hang/code/lightrail/build/shaders/basic.vert.spv"),
+		fragment_shader = create_shader_module(r, "/Users/hang/code/lightrail/build/shaders/basic.frag.spv");
 	const VkPipelineShaderStageCreateInfo shader_stages[2] = {
 		//Vertex stage
 		{
@@ -356,7 +356,7 @@ static void staged_buffer_write(
 	free_allocation(*device, staging_alloc);
 }
 
-bool create_renderer(SDL_Window* window, struct Renderer* const result) {
+bool create_renderer(SDL_Window* window, struct Renderer* const result, struct Scene* scene) {
 	struct Renderer r;
 	r.window = window;
 
@@ -565,25 +565,37 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	};
 
 	//FIXME: Testing data
-	const struct Vertex vertices[3] = {
-		{{0,0,0}, {0,0,0}, {0,0,0}},
-		{{0.5,0,0}, {0,0,0}, {0,0,0}},
-		{{0,0,0.5}, {0,0,0}, {0,0,0}},
-	};
-	const unsigned indices[3] = {0, 1, 2};
+	// const struct Vertex vertices[3] = {
+	// 	{{0,0,0}, {0,0,0}, {0,0,0}},
+	// 	{{0.5,0,0}, {0,0,0}, {0,0,0}},
+	// 	{{0,0,0.5}, {0,0,0}, {0,0,0}},
+	// };
+	// const unsigned indices[3] = {0, 1, 2};
+	
+	uint32_t total_vertices = 0;
+	uint32_t total_indices = 0;
+	for (int i = 0; i < scene->mesh_count; ++i) {
+		struct Mesh mesh = scene->meshes[i];
+		total_vertices += mesh.vertex_count;	
+		total_indices += mesh.index_count;
+	}
+
 	const VkBufferCreateInfo vertex_buffer_infos[2] = {
 		//Vertex buffer
 		{
-			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
-			3 * sizeof(struct Vertex),
+			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			NULL, 
+			0,
+			total_vertices * sizeof(struct Vertex),
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_SHARING_MODE_EXCLUSIVE,
-			0, NULL
+			0, 
+			NULL
 		},
 		//Index buffer
 		{
 			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
-			3 * sizeof(unsigned),
+			total_indices * sizeof(uint32_t),
 			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_SHARING_MODE_EXCLUSIVE,
 			0, NULL
@@ -597,8 +609,27 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 		r.vertex_buffers,
 		&r.vertex_alloc
 	);
-	const void* datas[2] = {(void*) vertices, (void*) indices};
-	const VkDeviceSize sizes[2] = {sizeof(vertices), sizeof(indices)};
+
+	void* datas[2] = {(void*) malloc(sizeof(struct Vertex) * total_vertices), (void*) malloc(sizeof(uint32_t)*total_indices)};
+	const VkDeviceSize sizes[2] = {sizeof(struct Vertex) * total_vertices, sizeof(uint32_t) * total_indices};
+	
+	r.index_indices = (uint32_t*) malloc(sizeof(uint32_t) * scene->mesh_count);
+	r.vertex_indices = (uint32_t*) malloc(sizeof(uint32_t) * scene->mesh_count);
+	
+	uint32_t vertex_offset = 0;
+	uint32_t index_offset = 0;
+	for (int i = 0; i < scene->mesh_count; ++i) {
+		struct Mesh mesh = scene->meshes[i];
+		struct Vertex v = mesh.vertices[i];
+		memcpy(&datas[0][vertex_offset], mesh.vertices, sizeof(struct Vertex) * mesh.vertex_count);
+		memcpy(&datas[1][index_offset], mesh.indices, sizeof(uint32_t) * mesh.index_count);
+		r.vertex_indices[i] = vertex_offset;
+		vertex_offset += mesh.vertex_count;
+		index_offset += mesh.index_count;
+		r.index_indices[i] = index_offset;
+	}
+	r.mesh_count = scene->mesh_count;
+
 	staged_buffer_write(
 		&r.physical_device,
 		&r.device,
@@ -894,8 +925,13 @@ void renderer_draw(struct Renderer* const r) {
 		VK_INDEX_TYPE_UINT32
 	);
 	//Drawing
-	//vkCmdDraw(r->command_buffer, 3, 1, 0, 0);
-	vkCmdDrawIndexed(r->command_buffer, 3, 1, 0, 0, 0);
+	// vkCmdDraw(r->command_buffer, 3, 1, 0, 0);
+	for (int i = 0; i < r->mesh_count; ++i) {
+		uint32_t lower = i == 0 ? 0 : r->index_indices[i-1];
+		uint32_t upper = r->index_indices[i];
+		vkCmdDrawIndexed(r->command_buffer, 2904, 1, lower, r->vertex_indices[i], 0);
+	}
+	// vkCmdDrawIndexed(r->command_buffer, 500, 1, 0, 0, 0);
 	vkCmdEndRenderPass(r->command_buffer);
 	//Blit render target to swapchain image
 	const VkImageSubresourceRange color_subresource_range = {

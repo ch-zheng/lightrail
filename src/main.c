@@ -7,7 +7,12 @@
 #include <SDL.h>
 #include <unistd.h>
 
+#include "scene.h"
+
 int main() {
+	struct Scene scene;
+	load_obj("../models/blender_monkey/scene.gltf", &scene);
+	
 	//SDL Initialization
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
 		fprintf(stderr, "Error initializing SDL: %s\n", SDL_GetError());
@@ -32,7 +37,7 @@ int main() {
 
 	//Renderer
 	struct Renderer renderer;
-	create_renderer(window, &renderer);
+	create_renderer(window, &renderer, &scene);
 
 	//Main loop
 	bool running = true;
@@ -81,4 +86,5 @@ int main() {
 	}
 
 	destroy_renderer(&renderer);
+	destroy_scene(scene);
 }
