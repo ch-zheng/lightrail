@@ -742,6 +742,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 	create_vertex_index_buffer(r.device, r.physical_device, &vertex_index_buffer, DEFAULT_VERTEX_BUFFER_SIZE, DEFAULT_INDEX_BUFFER_SIZE);
 	r.vertex_index_buffer = vertex_index_buffer;
 
+	printf("mesh count: %u\n", scene->mesh_count);
 	for (int i = 0; i < scene->mesh_count; ++i) {
 		struct Mesh mesh = scene->meshes[i];
 
