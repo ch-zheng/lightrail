@@ -36,4 +36,17 @@ VkResult create_images(
 	struct Allocation* const
 );
 
+void staged_buffer_write(
+	//Vulkan objects
+	VkPhysicalDevice* const physical_device,
+	VkDevice* const device,
+	VkCommandBuffer* const command_buffer,
+	VkQueue* const queue,
+	//Parameters
+	const unsigned count,
+	VkBuffer* const dst_buffers,
+	const void** const data,
+	const VkDeviceSize* sizes,
+	const VkDeviceSize* dest_offsets);
+
 void free_allocation(VkDevice, struct Allocation);

@@ -10,6 +10,7 @@ find_package(SDL2 REQUIRED)
 find_package(cglm REQUIRED)
 find_package(assimp REQUIRED)
 
+
 # Shaders
 set(
 	SHADER_SOURCES
@@ -46,19 +47,20 @@ target_sources(
 	src/alloc.c
 	src/camera.c
 	src/scene.c
+	src/vertex_buffer.c
 )
 add_dependencies(lightrail shaders)
 target_link_libraries(lightrail ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} ${ASSIMP_LIBRARIES})
 
 # Testing
-add_executable(test)
-target_include_directories(test PRIVATE ${Vulkan_INCLUDE_DIRECTORIES} ${SDL2_INCLUDE_DIRECTORIES} ${cglm_INCLUDE_DIRECTORIES} ${ASSIMP_INCLUDE_DIRS})
-target_include_directories(test PUBLIC ./include)
-target_link_libraries(test ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} ${ASSIMP_LIBRARIES})
-target_sources(
-	test PUBLIC
-	src/test.c
-	src/scene.c
-)
-set_property(TARGET test PROPERTY C_STANDARD 17)
+# add_executable(test)
+# target_include_directories(test PRIVATE ${Vulkan_INCLUDE_DIRECTORIES} ${SDL2_INCLUDE_DIRECTORIES} ${cglm_INCLUDE_DIRECTORIES} ${ASSIMP_INCLUDE_DIRS})
+# target_include_directories(test PUBLIC ./include)
+# target_link_libraries(test ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} ${ASSIMP_LIBRARIES})
+# target_sources(
+# 	test PUBLIC
+# 	src/test.c
+# 	src/scene.c
+# )
+# set_property(TARGET test PROPERTY C_STANDARD 17)
 

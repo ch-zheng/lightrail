@@ -7,10 +7,15 @@
 #include <math.h>
 #include <string.h>
 
-#define DEG_TO_RAD (3.14159 / 180)
+#define DEG_TO_RAD (M_PI / 180)
 
 void camera_transform(struct Camera camera, mat4 result) {
 	//View matrix
+	mat4 scale;
+	glm_mat4_identity(scale);
+	// glm_mat4_scale(scale, .25);
+	vec3 scale_factors = { 1, 1, 1 };
+	glm_scale(scale, scale_factors);
 	mat4 view;
 	glm_look(camera.position, camera.direction, camera.up, view);
 	//Change of basis
@@ -33,7 +38,9 @@ void camera_transform(struct Camera camera, mat4 result) {
 		{0, 0, -(far * near) / (far - near), 0},
 	};
 	//Composition
-	glm_mat4_mul(projection, view, result);
+	mat4 temp;
+	glm_mat4_mul(view, scale, temp);
+	glm_mat4_mul(projection, temp, result);
 }
 
 void camera_look(struct Camera* camera, vec3 target) {

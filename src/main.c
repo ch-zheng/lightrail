@@ -1,3 +1,6 @@
+#include "camera.h"
+#include "cglm/cglm.h"
+#include "cglm/vec3.h"
 #include "renderer.h"
 
 #include <stdbool.h>
@@ -11,7 +14,7 @@
 
 int main() {
 	struct Scene scene;
-	load_obj("../models/blender_monkey/scene.gltf", &scene);
+	load_obj("/Users/hang/code/lightrail/models/AntiqueCamera/glTF/AntiqueCamera.gltf", &scene);
 	
 	//SDL Initialization
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -22,7 +25,7 @@ int main() {
 		"Lightrail",
 		SDL_WINDOWPOS_UNDEFINED,
 		SDL_WINDOWPOS_UNDEFINED,
-		128, 128,
+		800, 600,
 		SDL_WINDOW_VULKAN|SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE
 	);
 	if (!window) {
@@ -39,6 +42,9 @@ int main() {
 	struct Renderer renderer;
 	create_renderer(window, &renderer, &scene);
 
+	vec3 camera_speed = {10.11, 10.11, 10.11};
+	vec3 camera_front = { 0.0, 0.0, 1.0 };
+
 	//Main loop
 	bool running = true;
 	SDL_Event event;
@@ -50,6 +56,7 @@ int main() {
 		//Event handling
 		while (SDL_PollEvent(&event)) {
 			switch (event.type) {
+				vec3 delta;
 				case SDL_KEYDOWN:
 					switch (event.key.keysym.sym) {
 						case SDLK_q:
