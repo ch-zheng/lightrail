@@ -193,7 +193,6 @@ static void load_texture(char* const filename, VkDevice device, VkPhysicalDevice
 	VkDeviceSize image_size = tex_width * tex_height * 4;
 
 	if (!pixels) {
-
 		abort();
 		exit(EXIT_FAILURE);
 	}

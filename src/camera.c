@@ -9,7 +9,7 @@
 
 #define DEG_TO_RAD (M_PI / 180)
 
-void camera_transform(struct Camera camera, mat4 result) {
+void camera_transform(struct Camera camera, mat4 model, mat4 result) {
 	//View matrix
 	mat4 view;
 	glm_look(camera.position, camera.direction, camera.up, view);
@@ -33,7 +33,9 @@ void camera_transform(struct Camera camera, mat4 result) {
 		{0, 0, -(far * near) / (far - near), 0},
 	};
 	//Composition
-	glm_mat4_mul(projection, view, result);
+	mat4 mv;
+	glm_mat4_mul(view, model, mv);
+	glm_mat4_mul(projection, mv, result);
 }
 
 void camera_look(struct Camera* camera, vec3 target) {

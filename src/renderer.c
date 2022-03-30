@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "alloc.h"
 #include "camera.h"
+#include "cglm/affine.h"
 #include "scene.h"
 #include "vertex_buffer.h"
 #include "vulkan/vulkan_core.h"
@@ -664,7 +665,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		{0, -2, 0},
 		{0, 1, 0},
 		{0, 0, 1},
-		90, 1, 1, 64,
+		120, 1, 1, 64,
 		PERSPECTIVE
 	};
 
@@ -1128,13 +1129,11 @@ void renderer_draw(struct Renderer* const r) {
 	vkQueuePresentKHR(r->present_queue, &present_info);
 }
 
-void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct Renderer* const r) {	
+void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct Renderer* const r) {
 	mat4 model;
 	glm_mat4_mul(node->transform, transform, model);
-	mat4 camera;
-	camera_transform(r->camera, camera);
 	mat4 mvp;
-	glm_mat4_mul(camera, model, mvp);
+	camera_transform(r->camera, model, mvp);
 
 	vkCmdPushConstants(
 		r->command_buffers[r->current_frame],
