@@ -73,6 +73,8 @@ struct Renderer {
 
 	VkDescriptorPool descriptor_pool;
 	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
+
+	struct Scene* scene;
 };
 
 //Renderer methods
@@ -81,3 +83,4 @@ void destroy_renderer(struct Renderer* const);
 VkResult renderer_create_resolution(struct Renderer* const, unsigned, unsigned);
 void renderer_destroy_resolution(struct Renderer* const);
 void renderer_draw(struct Renderer* const);
+void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct Renderer* const r);	

@@ -101,7 +101,7 @@ void resize_vertex_index_buffer(VkDevice device, VkPhysicalDevice physical_devic
 
 void write_vertex_index_buffer(VkDevice device, VkPhysicalDevice physical_device,
     VkCommandBuffer* command_buffer, VkQueue* queue, size_t vertex_count, struct Vertex* const vertices,
-    size_t index_count, uint32_t* const indices, struct VertexIndexBuffer* buff) {
+    size_t index_count, uint32_t* const indices, struct VertexIndexBuffer* buff, struct MemoryBlock* vertex_block, struct MemoryBlock* index_block) {
 
 	// VkDeviceSize offsets[] = { buff->vertex_count * sizeof(struct Vertex), buff->index_count * sizeof(uint32_t)};
 	VkDeviceSize offsets[] = { 0, 0};
@@ -173,6 +173,11 @@ void write_vertex_index_buffer(VkDevice device, VkPhysicalDevice physical_device
 	VkBuffer dst_buffers[] = { buff->vertex_buffer, buff->index_buffer };
 	void* data[] = { (void*) vertices, (void*) indices };
 	VkDeviceSize sizes[] = { vertex_size, index_size };
+
+
+	// make sure these aren't used after free
+	*vertex_block = *new_vertex_block;
+	*index_block = *new_index_block;
 
 	staged_buffer_write(&physical_device, &device, command_buffer, queue, 2, dst_buffers, data, sizes, offsets);
 }

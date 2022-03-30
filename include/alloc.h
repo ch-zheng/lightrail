@@ -7,6 +7,20 @@ struct Allocation {
 	VkDeviceSize* offsets;
 };
 
+enum BlockType {
+	VALID,
+	INVALID,
+};
+struct MemoryBlock {
+	size_t start_byte;
+	size_t length_in_bytes;
+	enum BlockType block_type;
+	struct MemoryBlock* next_block;
+};
+
+
+
+
 VkResult create_allocation(
 	VkPhysicalDevice* const,
 	VkDevice* const,
@@ -48,5 +62,22 @@ void staged_buffer_write(
 	const void** const data,
 	const VkDeviceSize* sizes,
 	const VkDeviceSize* dest_offsets);
+
+void staged_buffer_write_to_image(
+	//Vulkan objects
+	VkPhysicalDevice* const physical_device,
+	VkDevice* const device,
+	VkCommandBuffer* const command_buffer,
+	VkQueue* const queue,
+	//Parameters
+	const unsigned count,
+	VkImage* const dst_images,
+	const void** const data,
+	const VkDeviceSize* sizes,
+	VkFormat* formats,
+	VkImageLayout* old_layouts,
+	VkImageLayout* new_layouts,
+	uint32_t width,
+	uint32_t height);
 
 void free_allocation(VkDevice, struct Allocation);

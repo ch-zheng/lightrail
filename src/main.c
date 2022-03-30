@@ -14,7 +14,7 @@
 
 int main() {
 	struct Scene scene;
-	load_obj("/Users/hang/code/lightrail/models/ToyCar/glTF/ToyCar.gltf", &scene);
+	load_obj("/Users/hang/code/lightrail/models/pokemon_center/", "scene.gltf", &scene);
 	
 	//SDL Initialization
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -39,7 +39,7 @@ int main() {
 	bool minimized = window_flags & SDL_WINDOW_MINIMIZED;
 
 	//Renderer
-	struct Renderer renderer;
+	struct Renderer renderer = {};
 	create_renderer(window, &renderer, &scene);
 
 	vec3 camera_speed = {10.11, 10.11, 10.11};
@@ -93,5 +93,4 @@ int main() {
 	}
 
 	destroy_renderer(&renderer);
-	destroy_scene(scene);
 }

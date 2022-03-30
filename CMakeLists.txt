@@ -48,6 +48,7 @@ target_sources(
 	src/camera.c
 	src/scene.c
 	src/vertex_buffer.c
+	src/util.c
 )
 add_dependencies(lightrail shaders)
 target_link_libraries(lightrail ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} ${ASSIMP_LIBRARIES})
