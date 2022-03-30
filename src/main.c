@@ -14,7 +14,7 @@
 
 int main() {
 	struct Scene scene;
-	load_obj("/Users/hang/code/lightrail/models/pokemon_center/", "scene.gltf", &scene);
+	load_obj("/Users/hang/code/lightrail/models/Lantern/glTF/", "Lantern.gltf", &scene);
 	
 	//SDL Initialization
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {

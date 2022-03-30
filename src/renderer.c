@@ -1017,21 +1017,11 @@ void renderer_draw(struct Renderer* const r) {
 		0,
 		VK_INDEX_TYPE_UINT32
 	);
-	// vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipeline_layout, 0, 1, &r->descriptor_sets[r->current_frame], 0, NULL);
-	//Drawing
-	// vkCmdDraw(r->command_buffer, 3, 1, 0, 0);
-	// vkCmdDrawIndexed(command_buffer, r->vertex_index_buffer.index_count, 1, 0, 0, 0);
 	struct MemoryBlock* block = r->vertex_index_buffer.index_blocks;
 	struct MemoryBlock* v_block = r->vertex_index_buffer.vertex_blocks;
 	int count = 0;
-	render_scene(r->scene, r->scene->root, GLM_MAT4_IDENTITY, r);
-	// while (block) {
-	// 	vkCmdDrawIndexed(command_buffer, block->length_in_bytes / 4, 1, block->start_byte / 4, ((int)v_block->start_byte / sizeof(struct Vertex)), 0);
-	// 	count++;
-	// 	v_block = v_block->next_block;
-	// 	block = block->next_block;
-	// }
 
+	render_scene(r->scene, r->scene->root, GLM_MAT4_IDENTITY, r);
 
 	vkCmdEndRenderPass(command_buffer);
 	//Blit render target to swapchain image
@@ -1140,7 +1130,7 @@ void renderer_draw(struct Renderer* const r) {
 
 void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct Renderer* const r) {	
 	mat4 model;
-	glm_mat4_mul(transform, node->transform, model);
+	glm_mat4_mul(node->transform, transform, model);
 	mat4 camera;
 	camera_transform(r->camera, camera);
 	mat4 mvp;
@@ -1150,7 +1140,7 @@ void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct
 		r->command_buffers[r->current_frame],
 		r->pipeline_layout,
 		VK_SHADER_STAGE_VERTEX_BIT,
-		0, sizeof(mat4), camera
+		0, sizeof(mat4), mvp
 	);
 
 	for (int i = 0; i < node->mesh_count; ++i) {

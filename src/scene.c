@@ -88,7 +88,7 @@ bool load_obj(const char* const dir, const char* const file_name, struct Scene* 
 void process_node(struct aiNode *ai_node, struct Node* node, const struct aiScene* ai_scene, struct Scene* scene) {
 	struct aiMatrix4x4 transform =  ai_node->mTransformation;
 	struct aiMatrix4x4* from = &transform;
-	
+
 	mat4 to;
 	to[0][0] = (float)from->a1; to[0][1] = (float)from->b1;  to[0][2] = (float)from->c1; to[0][3] = (float)from->d1;
     to[1][0] = (float)from->a2; to[1][1] = (float)from->b2;  to[1][2] = (float)from->c2; to[1][3] = (float)from->d2;
@@ -244,6 +244,7 @@ static void load_texture(char* const filename, VkDevice device, VkPhysicalDevice
 }
 
 void load_textures(VkDevice device, VkPhysicalDevice phys_dev, VkCommandBuffer comm_buff, VkQueue queue, struct Scene* scene) {
+	return;
 	for (int i = 0; i < scene->texture_count; ++i) {
 		struct Texture text = scene->textures[i];
 		load_texture(text.filepath, device, phys_dev, comm_buff, queue, &scene->textures[i]);
