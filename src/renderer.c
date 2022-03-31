@@ -645,7 +645,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-		.anisotropyEnable = VK_FALSE,
+		.anisotropyEnable = VK_TRUE,
 		.maxAnisotropy = properties.limits.maxSamplerAnisotropy,
 		.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
 		.unnormalizedCoordinates = VK_FALSE,
@@ -665,7 +665,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		{0, -2, 0},
 		{0, 1, 0},
 		{0, 0, 1},
-		120, 1, 1, 64,
+		80, 1, 1, 64,
 		PERSPECTIVE
 	};
 
@@ -1022,8 +1022,14 @@ void renderer_draw(struct Renderer* const r) {
 	struct MemoryBlock* v_block = r->vertex_index_buffer.vertex_blocks;
 	int count = 0;
 
-	render_scene(r->scene, r->scene->root, GLM_MAT4_IDENTITY, r);
-
+	mat4 ident;
+	glm_mat4_identity(ident);
+	glm_scale(ident, (vec3) { 0.018, 0.018, 0.018 });
+	// glm_rotate(ident, glm_rad(45), (vec3) { 0, 1, 0});
+	// glm_rotate(ident, glm_rad(180), (vec3) { 0, 1, 0});
+	// glm_rotate(ident, glm_rad(-90), (vec3) { 1, 0, 0});
+	render_scene(r->scene, r->scene->root, ident, r);
+// 
 	vkCmdEndRenderPass(command_buffer);
 	//Blit render target to swapchain image
 	const VkImageSubresourceRange color_subresource_range = {
@@ -1129,9 +1135,10 @@ void renderer_draw(struct Renderer* const r) {
 	vkQueuePresentKHR(r->present_queue, &present_info);
 }
 
-void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct Renderer* const r) {
+void render_scene(struct Scene* scene, struct Node* node, mat4 parent_transform, struct Renderer* const r) {
 	mat4 model;
-	glm_mat4_mul(node->transform, transform, model);
+	glm_mat4_mul(parent_transform, node->transform, model);
+	// glm_mat4_mul(node->transform, *parent_transform, model);
 	mat4 mvp;
 	camera_transform(r->camera, model, mvp);
 
@@ -1148,14 +1155,13 @@ void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct
 		struct MemoryBlock v_block = m.vertex_block;
 		vkCmdDrawIndexed(
 			r->command_buffers[r->current_frame], 
-			block.length_in_bytes / 4, 
+			block.length_in_bytes / sizeof(uint32_t), 
 			1, 
-			block.start_byte / 4, 
+			block.start_byte / sizeof(uint32_t), 
 			((int)v_block.start_byte / sizeof(struct Vertex)), 
 			0
 		);
 	}
-
 	for (int i = 0; i < node->child_count; ++i) {
 		render_scene(scene, &node->children[i], model, r);
 	}	

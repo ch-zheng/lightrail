@@ -7,7 +7,7 @@
 #include <math.h>
 #include <string.h>
 
-#define DEG_TO_RAD (M_PI / 180)
+#define DEG_TO_RAD (M_PI / 180.0)
 
 void camera_transform(struct Camera camera, mat4 model, mat4 result) {
 	//View matrix
@@ -27,10 +27,10 @@ void camera_transform(struct Camera camera, mat4 model, mat4 result) {
 		height = 2 * camera.near * tanf(((float) camera.fov / 2) * DEG_TO_RAD),
 		width = camera.aspect_ratio * height;
 	mat4 projection = {
-		{2*near / width, 0, 0, 0},
-		{0, 2*near / height, 0, 0},
-		{0, 0, far / (far - near), 1},
-		{0, 0, -(far * near) / (far - near), 0},
+		2*near / width, 0, 0, 0,
+		0, 2*near / height, 0, 0,
+		0, 0, far / (far - near), 1,
+		0, 0, -(far * near) / (far - near), 0,
 	};
 	//Composition
 	mat4 mv;
