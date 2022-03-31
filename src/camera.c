@@ -7,9 +7,9 @@
 #include <math.h>
 #include <string.h>
 
-#define DEG_TO_RAD (3.14159 / 180)
+#define DEG_TO_RAD (M_PI / 180.0)
 
-void camera_transform(struct Camera camera, mat4 result) {
+void camera_transform(struct Camera camera, mat4 model, mat4 result) {
 	//View matrix
 	mat4 view;
 	glm_look(camera.position, camera.direction, camera.up, view);
@@ -27,13 +27,15 @@ void camera_transform(struct Camera camera, mat4 result) {
 		height = 2 * camera.near * tanf(((float) camera.fov / 2) * DEG_TO_RAD),
 		width = camera.aspect_ratio * height;
 	mat4 projection = {
-		{2*near / width, 0, 0, 0},
-		{0, 2*near / height, 0, 0},
-		{0, 0, far / (far - near), 1},
-		{0, 0, -(far * near) / (far - near), 0},
+		2*near / width, 0, 0, 0,
+		0, 2*near / height, 0, 0,
+		0, 0, far / (far - near), 1,
+		0, 0, -(far * near) / (far - near), 0,
 	};
 	//Composition
-	glm_mat4_mul(projection, view, result);
+	mat4 mv;
+	glm_mat4_mul(view, model, mv);
+	glm_mat4_mul(projection, mv, result);
 }
 
 void camera_look(struct Camera* camera, vec3 target) {

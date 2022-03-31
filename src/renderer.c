@@ -1,8 +1,18 @@
 #include "renderer.h"
+#include "alloc.h"
+#include "camera.h"
+#include "cglm/affine.h"
+#include "scene.h"
+#include "vertex_buffer.h"
 #include "vulkan/vulkan_core.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <SDL2/SDL_vulkan.h>
 #include <cglm/mat4.h>
+#include <stdlib.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb/stb_image.h"
 
 #define REQUIRED_EXT_COUNT 1
 
@@ -29,8 +39,8 @@ static VkShaderModule create_shader_module(
 
 static VkResult create_pipeline(struct Renderer* const r) {
 	//Shaders
-	const VkShaderModule vertex_shader = create_shader_module(r, "shaders/basic.vert.spv"),
-		fragment_shader = create_shader_module(r, "shaders/basic.frag.spv");
+	const VkShaderModule vertex_shader = create_shader_module(r, "/Users/hang/code/lightrail/build/shaders/basic.vert.spv"),
+		fragment_shader = create_shader_module(r, "/Users/hang/code/lightrail/build/shaders/basic.frag.spv");
 	const VkPipelineShaderStageCreateInfo shader_stages[2] = {
 		//Vertex stage
 		{
@@ -93,7 +103,7 @@ static VkResult create_pipeline(struct Renderer* const r) {
 		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, NULL, 0,
 		false,
 		false,
-		VK_POLYGON_MODE_FILL,
+		VK_POLYGON_MODE_LINE,
 		VK_CULL_MODE_BACK_BIT,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		false,
@@ -144,10 +154,18 @@ static VkResult create_pipeline(struct Renderer* const r) {
 		0 //?
 	};
 
-	//Layout
+
 	const VkPushConstantRange camera_constant = {
 		VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mat4)
 	};
+
+	// create descriptor layout
+	// create_descriptor_layouts(r);
+	// const VkPipelineLayoutCreateInfo layout_info = {
+	// 	VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0,
+	// 	1, &r->descriptor_set_layout, //TODO: Descriptor layout
+	// 	1, &camera_constant
+	// };
 	const VkPipelineLayoutCreateInfo layout_info = {
 		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0,
 		0, NULL, //TODO: Descriptor layout
@@ -280,83 +298,127 @@ static bool create_swapchain(struct Renderer* const r, bool old) {
 	return false;
 }
 
-/*! \brief Write data to buffers using an intermediate staging buffer.
- *
- * This function is generally used to write to buffers in device-local memory.
-*/
-static void staged_buffer_write(
-	//Vulkan objects
-	VkPhysicalDevice* const physical_device,
-	VkDevice* const device,
-	VkCommandBuffer* const command_buffer,
-	VkQueue* const queue,
-	//Parameters
-	const unsigned count,
-	VkBuffer* const dst_buffers,
-	const void** const data,
-	const VkDeviceSize* sizes) {
-	VkDeviceSize total_size = 0;
-	VkDeviceSize* const offsets = malloc(count * sizeof(VkDeviceSize));
-	for (unsigned i = 0; i < count; ++i) {
-		offsets[i] = total_size;
-		total_size += sizes[i];
-	}
-	//Create staging buffer
-	const VkBufferCreateInfo staging_buffer_info = {
-		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
-		total_size,
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_SHARING_MODE_EXCLUSIVE,
-		0, NULL
+static void create_descriptors(struct Renderer* const r) {	
+	return;
+	VkDescriptorSetLayoutBinding ubo_layout_binding = {
+		.binding = 0,
+		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		.descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+		.pImmutableSamplers = NULL,
 	};
-	VkBuffer staging_buffer;
-	struct Allocation staging_alloc;
-	create_buffers(
-		physical_device, device,
-		1, &staging_buffer_info,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-		| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		&staging_buffer,
-		&staging_alloc
-	);
-	//Write to staging buffer
-	void* buffer_data;
-	for (unsigned i = 0; i < count; ++i) {
-		vkMapMemory(*device, staging_alloc.memory, offsets[i], sizes[i], 0, &buffer_data);
-		memcpy(buffer_data, data[i], sizes[i]);
-		vkUnmapMemory(*device, staging_alloc.memory);
-	}
-	//Execute transfer
-	const VkCommandBufferBeginInfo begin_info = {
-		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
-		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+
+	VkDescriptorSetLayoutBinding sampler_layout_binding = {
+		.binding = 1,
+		.descriptorCount = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.pImmutableSamplers = NULL,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 	};
-	vkBeginCommandBuffer(*command_buffer, &begin_info);
-	for (unsigned i = 0; i < count; ++i) {
-		const VkBufferCopy region = {offsets[i], 0, sizes[i]};
-		vkCmdCopyBuffer(*command_buffer, staging_buffer, dst_buffers[i], 1, &region);
-	}
-	vkEndCommandBuffer(*command_buffer);
-	const VkSubmitInfo submit_info = {
-		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
-		0, NULL,
-		0,
-		1, command_buffer,
-		0, NULL
+
+	VkDescriptorSetLayoutBinding layout_bindings[] = { ubo_layout_binding, sampler_layout_binding };
+
+	VkDescriptorSetLayoutCreateInfo descriptor_layout_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 2,
+		.pBindings = layout_bindings,
 	};
-	VkFence fence;
-	VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, NULL, 0};
-	vkCreateFence(*device, &fence_info, NULL, &fence);
-	vkQueueSubmit(*queue, 1, &submit_info, fence);
-	vkWaitForFences(*device, 1, &fence, false, 1000000000); //FIXME: Reasonable timeout
-	//Cleanup
-	free(offsets);
-	vkDestroyFence(*device, fence, NULL);
-	vkDestroyBuffer(*device, staging_buffer, NULL);
-	free_allocation(*device, staging_alloc);
+
+	vkCreateDescriptorSetLayout(r->device, &descriptor_layout_info, NULL, &r->descriptor_set_layout);
+
+	// create the buffers
+	// TODO: find a use for this uniform
+	VkBufferCreateInfo uniform_buffer_info = {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = sizeof(vec3),
+		.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+	};
+
+	VkBufferCreateInfo uniform_buffer_infos[MAX_FRAMES_IN_FLIGHT];
+
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		uniform_buffer_infos[i] = uniform_buffer_info;
+		VkResult res = create_buffers(&r->physical_device, &r->device, 1, &uniform_buffer_info, 
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&r->uniform_buffers[i], &r->uniform_mems[i]);
+	}
+	// TODO: figure out why this doesn't work
+	// VkResult res = create_buffers(&r->physical_device, &r->device, MAX_FRAMES_IN_FLIGHT, uniform_buffer_infos, 
+	// 	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+	// 	r->uniform_buffers, r->uniform_mems);
+	
+	VkDescriptorPoolSize pool_sizes[] = { { 
+		.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		.descriptorCount = MAX_FRAMES_IN_FLIGHT,
+	},
+	{
+		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.descriptorCount = MAX_FRAMES_IN_FLIGHT,
+	}
+	};
+
+	VkDescriptorPoolCreateInfo pool_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		.poolSizeCount = 2,
+		.pPoolSizes = pool_sizes,
+		.maxSets = MAX_FRAMES_IN_FLIGHT,
+	};
+
+	vkCreateDescriptorPool(r->device, &pool_info, NULL, &r->descriptor_pool);
+	
+	VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		layouts[i] = r->descriptor_set_layout;
+	}
+
+	VkDescriptorSetAllocateInfo descriptor_alloc_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptor_pool,
+		.descriptorSetCount = MAX_FRAMES_IN_FLIGHT,
+		.pSetLayouts = layouts,
+	};
+
+	vkAllocateDescriptorSets(r->device, &descriptor_alloc_info, r->descriptor_sets);
+
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		VkDescriptorBufferInfo buffer_info = {
+			.buffer = r->uniform_buffers[i],
+			.offset = 0,
+			.range = sizeof(vec3),
+		};
+
+		VkDescriptorImageInfo image_info = {
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.imageView = r->texture_image_view,
+			.sampler = r->texture_sampler,
+		};
+
+		VkWriteDescriptorSet descriptor_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = r->descriptor_sets[i],
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.descriptorCount = 1,
+			.pBufferInfo = &buffer_info,
+		};
+
+		VkWriteDescriptorSet image_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = r->descriptor_sets[i],
+			.dstBinding = 1,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.descriptorCount = 1,
+			.pImageInfo = &image_info,
+		};
+		VkWriteDescriptorSet sets[] = {descriptor_write, image_write};
+		vkUpdateDescriptorSets(r->device, 2, sets, 0, NULL);
+	}
 }
 
-bool create_renderer(SDL_Window* window, struct Renderer* const result) {
+bool create_renderer(SDL_Window* window, struct Renderer* const result, struct Scene* scene) {
 	struct Renderer r;
 	r.window = window;
 
@@ -538,91 +600,131 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, NULL,
 		r.command_pool,
 		VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-		1
+		MAX_FRAMES_IN_FLIGHT,
 	};
-	vkAllocateCommandBuffers(r.device, &cmd_buffer_alloc_info, &r.command_buffer);
+	vkAllocateCommandBuffers(r.device, &cmd_buffer_alloc_info, r.command_buffers);
 
 	//Semaphores
 	const VkSemaphoreCreateInfo semaphore_info = {
 		VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, NULL, 0
 	};
-	for (unsigned i = 0; i < 2; ++i)
-		vkCreateSemaphore(r.device, &semaphore_info, NULL, r.semaphores + i);
+
+	VkFenceCreateInfo fence_info = {
+		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+		.flags = VK_FENCE_CREATE_SIGNALED_BIT,
+	};
+
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		vkCreateSemaphore(r.device, &semaphore_info, NULL, &r.image_available_semaphores[i]);
+		vkCreateSemaphore(r.device, &semaphore_info, NULL, &r.render_finished_semaphores[i]);
+		vkCreateFence(r.device, &fence_info, NULL, &r.in_flight_fences[i]);
+	}
 
 	//TODO: Multisampling
 	//TODO: Pipeline cache
 
 	create_swapchain(&r, false);
-	renderer_create_resolution(&r, 256, 256); //TODO: Resolution setting
+
+	// load all of the textures in the scene provided. 
+	// TODO some textures are loaded more than once
+	// for (int i = 0; i < scene->texture_count; ++i) {
+	// 	struct Texture t = scene->textures[i];
+	// 	if (!t.loaded) {
+	// 		load_texture(t.filepath, 0, 0, r.device, r.physical_device, r.command_buffers[0],r.graphics_queue, &scene->textures[i]);
+	// 	}
+	// }
+	load_textures(r.device, r.physical_device, r.command_buffers[0], r.graphics_queue, scene);
+	r.texture_image_view = scene->textures[1].image_view;
+	VkPhysicalDeviceProperties properties = {};	
+	vkGetPhysicalDeviceProperties(r.physical_device, &properties);
+
+	VkSamplerCreateInfo texture_sampler_info = {
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.magFilter = VK_FILTER_LINEAR,
+		.minFilter = VK_FILTER_LINEAR,
+		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.anisotropyEnable = VK_TRUE,
+		.maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+		.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+		.unnormalizedCoordinates = VK_FALSE,
+		.compareEnable = VK_FALSE,
+		.compareOp = VK_COMPARE_OP_ALWAYS,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		.mipLodBias = 0.0f,
+		.minLod = 0.0f,
+		.maxLod = 0.0f,
+	};
+	vkCreateSampler(r.device, &texture_sampler_info, NULL, &r.texture_sampler);
+	// create_descriptors(&r);
+	renderer_create_resolution(&r, 800, 600); //TODO: Resolution setting
 
 	//Camera
 	r.camera = (struct Camera) {
 		{0, -2, 0},
 		{0, 1, 0},
 		{0, 0, 1},
-		90, 1, 1, 64,
+		80, 1, 1, 64,
 		PERSPECTIVE
 	};
 
-	//FIXME: Testing data
-	const struct Vertex vertices[3] = {
-		{{0,0,0}, {0,0,0}, {0,0,0}},
-		{{0.5,0,0}, {0,0,0}, {0,0,0}},
-		{{0,0,0.5}, {0,0,0}, {0,0,0}},
-	};
-	const unsigned indices[3] = {0, 1, 2};
-	const VkBufferCreateInfo vertex_buffer_infos[2] = {
-		//Vertex buffer
-		{
-			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
-			3 * sizeof(struct Vertex),
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_SHARING_MODE_EXCLUSIVE,
-			0, NULL
-		},
-		//Index buffer
-		{
-			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
-			3 * sizeof(unsigned),
-			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_SHARING_MODE_EXCLUSIVE,
-			0, NULL
-		},
-	};
-	create_buffers(
-		&r.physical_device,
-		&r.device,
-		2, vertex_buffer_infos,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		r.vertex_buffers,
-		&r.vertex_alloc
-	);
-	const void* datas[2] = {(void*) vertices, (void*) indices};
-	const VkDeviceSize sizes[2] = {sizeof(vertices), sizeof(indices)};
-	staged_buffer_write(
-		&r.physical_device,
-		&r.device,
-		&r.command_buffer,
-		&r.graphics_queue,
-		2, r.vertex_buffers, datas, sizes
-	);
+	struct VertexIndexBuffer vertex_index_buffer = {};
+	create_vertex_index_buffer(r.device, r.physical_device, &vertex_index_buffer, DEFAULT_VERTEX_BUFFER_SIZE, DEFAULT_INDEX_BUFFER_SIZE);
+	r.vertex_index_buffer = vertex_index_buffer;
 
+	for (int i = 0; i < scene->mesh_count; ++i) {
+		struct Mesh mesh = scene->meshes[i];
+
+		struct Vertex* vertices = (struct Vertex*) malloc(sizeof(struct Vertex) * mesh.vertex_count);
+		uint32_t* indices = (uint32_t*) malloc(sizeof(uint32_t) * mesh.index_count);
+		memcpy(vertices, mesh.vertices, sizeof(struct Vertex) * mesh.vertex_count);
+		memcpy(indices, mesh.indices, sizeof(uint32_t) * mesh.index_count);
+		write_vertex_index_buffer(
+			r.device,
+			r.physical_device,
+			&r.command_buffers[0],
+			&r.graphics_queue,
+			mesh.vertex_count,
+			vertices,
+			mesh.index_count,
+			indices,
+			&r.vertex_index_buffer,
+			&scene->meshes[i].vertex_block,
+			&scene->meshes[i].index_block	
+		);
+	}
+	r.mesh_count = scene->mesh_count;
+	r.scene = scene;
+	
 	*result = r;
 	return false;
 }
 
 void destroy_renderer(struct Renderer* const r) {
-	//FIXME: Testing data
-	for (unsigned i = 0; i < 2; ++i)
-		vkDestroyBuffer(r->device, r->vertex_buffers[i], NULL);
-	free_allocation(r->device, r->vertex_alloc);
 
+	//FIXME: Testing data
+	// for (unsigned i = 0; i < 2; ++i)
+	// 	vkDestroyBuffer(r->device, r->vertex_buffers[i], NULL);
+	// free_allocation(r->device, r->vertex_alloc);
+	vkDeviceWaitIdle(r->device);
+	destroy_scene(r->device, *r->scene);
 	renderer_destroy_resolution(r);
 	vkDestroySwapchainKHR(r->device, r->swapchain, NULL);
+	// vkDestroyDescriptorSetLayout(r->device, r->descriptor_set_layout, NULL);
+	// vkDestroyDescriptorPool(r->device, r->descriptor_pool, NULL);
 	free(r->swapchain_images);
-	vkDestroySemaphore(r->device, r->semaphores[0], NULL);
-	vkDestroySemaphore(r->device, r->semaphores[1], NULL);
+	vkDestroySampler(r->device, r->texture_sampler, NULL);
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		// vkDestroyDescriptorSetLayout(r->device, r->descriptor_set_layout, NULL);
+		vkDestroySemaphore(r->device, r->image_available_semaphores[i], NULL);
+		vkDestroySemaphore(r->device, r->render_finished_semaphores[i], NULL);
+		vkDestroyFence(r->device, r->in_flight_fences[i], NULL);
+		// vkDestroyBuffer(r->device, r->uniform_buffers[i], NULL);
+		// free_allocation(r->device, r->uniform_mems[i]);
+	}
 	vkDestroyCommandPool(r->device, r->command_pool, NULL);
+	cleanup_vertex_index_buffer(r->device, r->physical_device, &r->vertex_index_buffer);
 	vkDestroyDevice(r->device, NULL);
 	vkDestroySurfaceKHR(r->instance, r->surface, NULL);
 	vkDestroyInstance(r->instance, NULL);
@@ -829,13 +931,34 @@ void renderer_destroy_resolution(struct Renderer* const r) {
 	free_allocation(r->device, r->image_mem);
 }
 
+static void update_uniform_buffers(struct Renderer* const r) {
+	time_t t = time(NULL);
+	float value = (float) (t % 3);
+	vec3 color = { 0.4999*value, 0.4f, 0.4f };
+
+	void* data;
+	vkMapMemory(r->device, r->uniform_mems[r->current_frame].memory, 0, sizeof(color), 0, &data);
+	memcpy(data, color, sizeof(vec3));
+	vkUnmapMemory(r->device, r->uniform_mems[r->current_frame].memory);
+}
+
 void renderer_draw(struct Renderer* const r) {
+	// vec3 look = {12.0f, 0.0f, 0.0f };
+	// camera_look(&r->camera, look);
+	r->current_frame = (r->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+	vkWaitForFences(r->device, 1, &r->in_flight_fences[r->current_frame], VK_TRUE, UINT64_MAX);
+	vkResetFences(r->device, 1, &r->in_flight_fences[r->current_frame]);
+	VkCommandBuffer command_buffer = r->command_buffers[r->current_frame];
+	VkSemaphore image_available_semaphore = r->image_available_semaphores[r->current_frame];
+	VkSemaphore render_finished_semaphore = r->render_finished_semaphores[r->current_frame];
+
 	//Acquire swapchain image
 	unsigned image_index;
 	VkResult swapchain_status = VK_ERROR_UNKNOWN;
 	while (swapchain_status != VK_SUCCESS && swapchain_status != VK_SUBOPTIMAL_KHR) {
 		swapchain_status = vkAcquireNextImageKHR(
-			r->device, r->swapchain, 0, r->semaphores[0], NULL, &image_index
+			r->device, r->swapchain, 0, image_available_semaphore, NULL, &image_index
 		);
 		if (swapchain_status == VK_ERROR_OUT_OF_DATE_KHR) {
 			//Recreate swapchain
@@ -844,12 +967,14 @@ void renderer_draw(struct Renderer* const r) {
 		}
 	}
 
+	// update_uniform_buffers(r);
+
 	//Record command buffer
 	const VkCommandBufferBeginInfo begin_info = {
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
 		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
 	};
-	vkBeginCommandBuffer(r->command_buffer, &begin_info);
+	vkBeginCommandBuffer(command_buffer, &begin_info);
 	//Render pass
 	const VkClearValue clear_values[3] = {
 		{0, 0, 0, 1}, //Color
@@ -864,39 +989,48 @@ void renderer_draw(struct Renderer* const r) {
 		3, clear_values
 	};
 	vkCmdBeginRenderPass(
-		r->command_buffer,
+		command_buffer,
 		&render_pass_begin_info,
 		VK_SUBPASS_CONTENTS_INLINE
 	);
-	vkCmdBindPipeline(r->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipeline);
+	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipeline);
 	//TODO: Bind descriptors
 	//Push constants
 	//TODO: Camera transformation
-	mat4 camera;
-	camera_transform(r->camera, camera);
-	vkCmdPushConstants(
-		r->command_buffer,
-		r->pipeline_layout,
-		VK_SHADER_STAGE_VERTEX_BIT,
-		0, sizeof(mat4), camera
-	);
+	// mat4 camera;
+	// camera_transform(r->camera, camera);
+	// vkCmdPushConstants(
+	// 	command_buffer,
+	// 	r->pipeline_layout,
+	// 	VK_SHADER_STAGE_VERTEX_BIT,
+	// 	0, sizeof(mat4), camera
+	// );
 	//Vertex buffers
 	const VkDeviceSize offsets[1] = {0};
 	vkCmdBindVertexBuffers(
-		r->command_buffer,
+		command_buffer,
 		0,
-		1, r->vertex_buffers, offsets
+		1, &r->vertex_index_buffer.vertex_buffer, offsets
 	);
 	vkCmdBindIndexBuffer(
-		r->command_buffer,
-		r->vertex_buffers[1],
+		command_buffer,
+		r->vertex_index_buffer.index_buffer,
 		0,
 		VK_INDEX_TYPE_UINT32
 	);
-	//Drawing
-	//vkCmdDraw(r->command_buffer, 3, 1, 0, 0);
-	vkCmdDrawIndexed(r->command_buffer, 3, 1, 0, 0, 0);
-	vkCmdEndRenderPass(r->command_buffer);
+	struct MemoryBlock* block = r->vertex_index_buffer.index_blocks;
+	struct MemoryBlock* v_block = r->vertex_index_buffer.vertex_blocks;
+	int count = 0;
+
+	mat4 ident;
+	glm_mat4_identity(ident);
+	glm_scale(ident, (vec3) { 0.018, 0.018, 0.018 });
+	// glm_rotate(ident, glm_rad(45), (vec3) { 0, 1, 0});
+	// glm_rotate(ident, glm_rad(180), (vec3) { 0, 1, 0});
+	// glm_rotate(ident, glm_rad(-90), (vec3) { 1, 0, 0});
+	render_scene(r->scene, r->scene->root, ident, r);
+// 
+	vkCmdEndRenderPass(command_buffer);
 	//Blit render target to swapchain image
 	const VkImageSubresourceRange color_subresource_range = {
 		VK_IMAGE_ASPECT_COLOR_BIT,
@@ -930,7 +1064,7 @@ void renderer_draw(struct Renderer* const r) {
 		},
 	};
 	vkCmdPipelineBarrier(
-		r->command_buffer,
+		command_buffer,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0,
@@ -949,7 +1083,7 @@ void renderer_draw(struct Renderer* const r) {
 		{{0, 0, 0}, {r->surface_extent.width, r->surface_extent.height, 1}}
 	};
 	vkCmdBlitImage(
-		r->command_buffer,
+		command_buffer,
 		r->images[1],
 		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		r->swapchain_images[image_index],
@@ -969,7 +1103,7 @@ void renderer_draw(struct Renderer* const r) {
 		color_subresource_range
 	};
 	vkCmdPipelineBarrier(
-		r->command_buffer,
+		command_buffer,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		VK_PIPELINE_STAGE_HOST_BIT,
 		0,
@@ -977,30 +1111,58 @@ void renderer_draw(struct Renderer* const r) {
 		0, NULL,
 		1, &present_barrier
 	);
-	vkEndCommandBuffer(r->command_buffer);
+	vkEndCommandBuffer(command_buffer);
 
 	//Submit command buffer to queue
 	VkPipelineStageFlagBits wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 	VkSubmitInfo submit_info = {
 		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
-		1, &r->semaphores[0],
+		1, &image_available_semaphore,
 		wait_stages,
-		1, &r->command_buffer,
-		1, &r->semaphores[1]
+		1, &command_buffer,
+		1, &render_finished_semaphore
 	};
-	vkQueueSubmit(r->graphics_queue, 1, &submit_info, NULL);
+	vkQueueSubmit(r->graphics_queue, 1, &submit_info, r->in_flight_fences[r->current_frame]);
 
 	//Presentation
 	VkPresentInfoKHR present_info = {
 		VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, NULL,
-		1, &r->semaphores[1],
+		1, &render_finished_semaphore,
 		1, &r->swapchain,
 		&image_index,
-		NULL
+		NULL,
 	};
 	vkQueuePresentKHR(r->present_queue, &present_info);
+}
 
-	//Wait
-	//TODO: Frames-in-flight
-	vkQueueWaitIdle(r->present_queue);
+void render_scene(struct Scene* scene, struct Node* node, mat4 parent_transform, struct Renderer* const r) {
+	mat4 model;
+	glm_mat4_mul(parent_transform, node->transform, model);
+	// glm_mat4_mul(node->transform, *parent_transform, model);
+	mat4 mvp;
+	camera_transform(r->camera, model, mvp);
+
+	vkCmdPushConstants(
+		r->command_buffers[r->current_frame],
+		r->pipeline_layout,
+		VK_SHADER_STAGE_VERTEX_BIT,
+		0, sizeof(mat4), mvp
+	);
+
+	for (int i = 0; i < node->mesh_count; ++i) {
+		struct Mesh m = scene->meshes[node->meshes[i]];
+		struct MemoryBlock block = m.index_block;
+		struct MemoryBlock v_block = m.vertex_block;
+		vkCmdDrawIndexed(
+			r->command_buffers[r->current_frame], 
+			block.length_in_bytes / sizeof(uint32_t), 
+			1, 
+			block.start_byte / sizeof(uint32_t), 
+			((int)v_block.start_byte / sizeof(struct Vertex)), 
+			0
+		);
+	}
+	for (int i = 0; i < node->child_count; ++i) {
+		render_scene(scene, &node->children[i], model, r);
+	}	
 }

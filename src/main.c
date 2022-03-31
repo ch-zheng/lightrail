@@ -1,3 +1,6 @@
+#include "camera.h"
+#include "cglm/cglm.h"
+#include "cglm/vec3.h"
 #include "renderer.h"
 
 #include <stdbool.h>
@@ -7,6 +10,7 @@
 #include <cglm/vec3.h>
 #include <SDL2/SDL.h>
 #include <unistd.h>
+#include "scene.h"
 
 struct Inputs {
 	//Movement
@@ -15,7 +19,11 @@ struct Inputs {
 	bool rotate_up, rotate_down, rotate_left, rotate_right;
 };
 
+
 int main() {
+	struct Scene scene;
+	load_obj("/Users/hang/code/lightrail/models/phoenix_bird/", "scene.gltf", &scene);
+	
 	//SDL Initialization
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
 		fprintf(stderr, "Error initializing SDL: %s\n", SDL_GetError());
@@ -25,7 +33,7 @@ int main() {
 		"Lightrail",
 		SDL_WINDOWPOS_UNDEFINED,
 		SDL_WINDOWPOS_UNDEFINED,
-		128, 128,
+		800, 600,
 		SDL_WINDOW_VULKAN|SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE
 	);
 	if (!window) {
@@ -47,8 +55,11 @@ int main() {
 	};
 
 	//Renderer
-	struct Renderer renderer;
-	create_renderer(window, &renderer);
+	struct Renderer renderer = {};
+	create_renderer(window, &renderer, &scene);
+
+	vec3 camera_speed = {10.11, 10.11, 10.11};
+	vec3 camera_front = { 0.0, 0.0, 1.0 };
 
 	//Main loop
 	bool running = true;
@@ -61,6 +72,7 @@ int main() {
 		//Event handling
 		while (SDL_PollEvent(&event)) {
 			switch (event.type) {
+				vec3 delta;
 				case SDL_KEYDOWN:
 					switch (event.key.keysym.sym) {
 						//Movement

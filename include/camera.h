@@ -11,5 +11,5 @@ struct Camera {
 };
 
 struct Camera create_camera();
-void camera_transform(struct Camera, mat4);
+void camera_transform(struct Camera, mat4, mat4);
 void camera_look(struct Camera*, vec3);

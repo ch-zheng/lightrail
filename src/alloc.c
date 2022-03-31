@@ -2,6 +2,27 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include "util.h"
+
+static void change_image_layout(VkImage* image, VkImageLayout old, VkImageLayout new, VkCommandBuffer* command_buffer) {
+	VkImageMemoryBarrier barrier = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.oldLayout = old,
+		.newLayout = new,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.image = *image,
+		.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		.subresourceRange.baseMipLevel = 0,
+		.subresourceRange.levelCount = 1,
+		.subresourceRange.baseArrayLayer = 0,
+		.subresourceRange.layerCount = 1,
+		.srcAccessMask = 0,
+		.dstAccessMask = 0,
+	};
+	vkCmdPipelineBarrier(*command_buffer, 0, 0, 0, 0, NULL, 0, NULL, 1, &barrier);
+}
 
 //Note: Do not put buffers & images in the same allocation
 VkResult create_allocation(
@@ -144,7 +165,191 @@ VkResult create_images(
 	return result;
 }
 
+/*! \brief Write data to buffers using an intermediate staging buffer.
+ *
+ * This function is generally used to write to buffers in device-local memory.
+*/
+void staged_buffer_write(
+	//Vulkan objects
+	VkPhysicalDevice* const physical_device,
+	VkDevice* const device,
+	VkCommandBuffer* const command_buffer,
+	VkQueue* const queue,
+	//Parameters
+	const unsigned count,
+	VkBuffer* const dst_buffers,
+	const void** const data,
+	const VkDeviceSize* sizes,
+	const VkDeviceSize* dest_offsets) {
+	VkDeviceSize total_size = 0;
+	VkDeviceSize* const offsets = malloc(count * sizeof(VkDeviceSize));
+	for (unsigned i = 0; i < count; ++i) {
+		offsets[i] = total_size;
+		total_size += sizes[i];
+	}
+	//Create staging buffer
+	const VkBufferCreateInfo staging_buffer_info = {
+		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
+		total_size,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_SHARING_MODE_EXCLUSIVE,
+		0, NULL
+	};
+	VkBuffer staging_buffer;
+	struct Allocation staging_alloc;
+	create_buffers(
+		physical_device, device,
+		1, &staging_buffer_info,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+		| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&staging_buffer,
+		&staging_alloc
+	);
+	//Write to staging buffer
+	void* buffer_data;
+	for (unsigned i = 0; i < count; ++i) {
+		vkMapMemory(*device, staging_alloc.memory, offsets[i], sizes[i], 0, &buffer_data);
+		memcpy(buffer_data, data[i], sizes[i]);
+		vkUnmapMemory(*device, staging_alloc.memory);
+	}
+	//Execute transfer
+	const VkCommandBufferBeginInfo begin_info = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
+		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	vkBeginCommandBuffer(*command_buffer, &begin_info);
+	for (unsigned i = 0; i < count; ++i) {
+		// const VkBufferCopy region = {offsets[i], 0, sizes[i]};
+		VkBufferCopy r = {
+			.srcOffset = offsets[i],
+			.dstOffset = dest_offsets[i],
+			.size = sizes[i],
+		};
+		vkCmdCopyBuffer(*command_buffer, staging_buffer, dst_buffers[i], 1, &r);
+	}
+	vkEndCommandBuffer(*command_buffer);
+	const VkSubmitInfo submit_info = {
+		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
+		0, NULL,
+		0,
+		1, command_buffer,
+		0, NULL
+	};
+	VkFence fence;
+	VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, NULL, 0};
+	vkCreateFence(*device, &fence_info, NULL, &fence);
+	vkQueueSubmit(*queue, 1, &submit_info, fence);
+	vkWaitForFences(*device, 1, &fence, false, 1000000000); //FIXME: Reasonable timeout
+	//Cleanup
+	free(offsets);
+	vkDestroyFence(*device, fence, NULL);
+	vkDestroyBuffer(*device, staging_buffer, NULL);
+	free_allocation(*device, staging_alloc);
+}
+
+void staged_buffer_write_to_image(
+	//Vulkan objects
+	VkPhysicalDevice* const physical_device,
+	VkDevice* const device,
+	VkCommandBuffer* const command_buffer,
+	VkQueue* const queue,
+	//Parameters
+	const unsigned count,
+	VkImage* const dst_images,
+	const void** const data,
+	const VkDeviceSize* sizes,
+	VkFormat* formats,
+	VkImageLayout* old_layouts,
+	VkImageLayout* new_layouts,
+	uint32_t width,
+	uint32_t height) {
+	VkDeviceSize total_size = 0;
+	VkDeviceSize* const offsets = malloc(count * sizeof(VkDeviceSize));
+	for (unsigned i = 0; i < count; ++i) {
+		offsets[i] = total_size;
+		total_size += sizes[i];
+	}
+	//Create staging buffer
+	const VkBufferCreateInfo staging_buffer_info = {
+		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
+		total_size,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_SHARING_MODE_EXCLUSIVE,
+		0, NULL
+	};
+	VkBuffer staging_buffer;
+	struct Allocation staging_alloc;
+	create_buffers(
+		physical_device, device,
+		1, &staging_buffer_info,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+		| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&staging_buffer,
+		&staging_alloc
+	);
+	//Write to staging buffer
+	void* buffer_data;
+	for (unsigned i = 0; i < count; ++i) {
+		vkMapMemory(*device, staging_alloc.memory, offsets[i], sizes[i], 0, &buffer_data);
+		memcpy(buffer_data, data[i], sizes[i]);
+		vkUnmapMemory(*device, staging_alloc.memory);
+	}
+	
+	//Execute transfer
+	const VkCommandBufferBeginInfo begin_info = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
+		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	vkBeginCommandBuffer(*command_buffer, &begin_info);
+	VkSubmitInfo submit_info = {
+		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
+		0, NULL,
+		0,
+		1, command_buffer,
+		0, NULL
+	};
+
+	VkImageMemoryBarrier* barriers = malloc(count * sizeof(VkImageMemoryBarrier));
+	for (int i = 0; i < count; ++i) {
+		change_image_layout(&dst_images[i], old_layouts[i], new_layouts[i], command_buffer);
+	}
+	flush_command_buffer(device, command_buffer, queue, &submit_info);
+	vkResetCommandBuffer(*command_buffer, 0);
+	vkBeginCommandBuffer(*command_buffer, &begin_info);
+	// for (int i = 0; i < count; ++i) {
+	// 	change_image_layout(&dst_images[i], new_layouts[i], , VkCommandBuffer *command_buffer)
+	// }
+	// transition the image layouts to the correct format
+
+	for (unsigned i = 0; i < count; ++i) {
+		const VkBufferImageCopy region = {
+			.bufferOffset = offsets[i],
+			.bufferRowLength = 0,
+			.bufferImageHeight = 0,
+			.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.imageSubresource.mipLevel = 0,
+			.imageSubresource.baseArrayLayer = 0,
+			.imageSubresource.layerCount = 1,
+			.imageOffset = {0, 0, 0},
+			.imageExtent = { width, height, 1},
+		};
+		vkCmdCopyBufferToImage(*command_buffer, staging_buffer, dst_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+	}
+	flush_command_buffer(device, command_buffer, queue, &submit_info);
+	vkResetCommandBuffer(*command_buffer, 0);
+	vkBeginCommandBuffer(*command_buffer, &begin_info);
+
+	for (int i = 0; i < count; ++i) {
+		change_image_layout(&dst_images[i], new_layouts[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, command_buffer);
+	}
+	flush_command_buffer(device, command_buffer, queue, &submit_info);
+	free(offsets);
+	vkDestroyBuffer(*device, staging_buffer, NULL);
+	free_allocation(*device, staging_alloc);
+}
+
 void free_allocation(VkDevice device, struct Allocation alloc) {
 	vkFreeMemory(device, alloc.memory, NULL);
 	free(alloc.offsets);
 }
+
