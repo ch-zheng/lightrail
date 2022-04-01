@@ -5,15 +5,12 @@ project(Lightrail
 	LANGUAGES C
 )
 
-<<<<<<< HEAD
-=======
 find_package(Vulkan REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(cglm REQUIRED)
 find_package(assimp REQUIRED)
 
 
->>>>>>> 164e601022531016a129d9640b7d46c2fc0cbb25
 # Shaders
 set(
 	SHADER_SOURCES
@@ -38,14 +35,11 @@ add_custom_target(shaders DEPENDS ${SHADER_FILES})
 add_executable(lightrail)
 set_property(TARGET lightrail PROPERTY C_STANDARD 17)
 target_include_directories(lightrail PUBLIC ./include)
-<<<<<<< HEAD
-=======
-# if(APPLE)
+if(APPLE)
 	target_include_directories(lightrail PRIVATE /opt/homebrew/include)
-# endif(APPLE)
+endif(APPLE)
 message(STATUS ${ASSIMP_LIBRARIES})
 target_include_directories(lightrail PRIVATE /opt/homebrew/include ${Vulkan_INCLUDE_DIRS} ${SDL2_INCLUDE_DIRS} ${cglm_INCLUDE_DIRS} ${ASSIMP_INCLUDE_DIRS})
->>>>>>> 164e601022531016a129d9640b7d46c2fc0cbb25
 target_sources(
 	lightrail PUBLIC
 	src/main.c
@@ -57,19 +51,6 @@ target_sources(
 	src/util.c
 )
 add_dependencies(lightrail shaders)
-<<<<<<< HEAD
-target_link_libraries(lightrail SDL2 vulkan cglm m)
-
-# Testing
-add_executable(test)
-target_include_directories(test PUBLIC ./include)
-target_sources(
-	test PUBLIC
-	src/test.c
-	src/scene.c
-)
-set_property(TARGET test PROPERTY C_STANDARD 17)
-=======
 target_link_libraries(lightrail ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} ${ASSIMP_LIBRARIES})
 
 # Testing
@@ -84,4 +65,3 @@ target_link_libraries(lightrail ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIB
 # )
 # set_property(TARGET test PROPERTY C_STANDARD 17)
 
->>>>>>> 164e601022531016a129d9640b7d46c2fc0cbb25
