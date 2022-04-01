@@ -187,7 +187,7 @@ int main() {
 		if (inputs.move_down)
 			glm_vec3_sub(movement, renderer.camera.up, movement);
 		glm_vec3_normalize(movement);
-		glm_vec3_scale(movement, 2*delta, movement);
+		glm_vec3_scale(movement, 5*delta, movement);
 		glm_vec3_add(movement, renderer.camera.position, renderer.camera.position);
 		//Rotation
 		const float angular_velocity = 2; //Radians per second

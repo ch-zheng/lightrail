@@ -103,7 +103,7 @@ static VkResult create_pipeline(struct Renderer* const r) {
 		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, NULL, 0,
 		false,
 		false,
-		VK_POLYGON_MODE_LINE,
+		VK_POLYGON_MODE_FILL,
 		VK_CULL_MODE_BACK_BIT,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		false,
@@ -114,8 +114,8 @@ static VkResult create_pipeline(struct Renderer* const r) {
 	const VkPipelineMultisampleStateCreateInfo multisample = {
 		VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, NULL, 0,
 		VK_SAMPLE_COUNT_4_BIT,
-		false,
-		1,
+		VK_TRUE,
+		.5f,
 		NULL,
 		false,
 		false
@@ -158,19 +158,26 @@ static VkResult create_pipeline(struct Renderer* const r) {
 	const VkPushConstantRange camera_constant = {
 		VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mat4)
 	};
+	const VkPushConstantRange texture_index_constant = {
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+		.offset = sizeof(mat4),
+		.size = sizeof(struct Material),
+	};
+
+	VkPushConstantRange push_contants[] = {camera_constant, texture_index_constant};
 
 	// create descriptor layout
 	// create_descriptor_layouts(r);
-	// const VkPipelineLayoutCreateInfo layout_info = {
-	// 	VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0,
-	// 	1, &r->descriptor_set_layout, //TODO: Descriptor layout
-	// 	1, &camera_constant
-	// };
 	const VkPipelineLayoutCreateInfo layout_info = {
 		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0,
-		0, NULL, //TODO: Descriptor layout
-		1, &camera_constant
+		1, &r->descriptor_set_layout, //TODO: Descriptor layout
+		2, push_contants
 	};
+	// const VkPipelineLayoutCreateInfo layout_info = {
+	// 	VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0,
+	// 	0, NULL, //TODO: Descriptor layout
+	// 	1, &camera_constant
+	// };
 	vkCreatePipelineLayout(r->device, &layout_info, NULL, &r->pipeline_layout);
 
 	//Create pipeline
@@ -299,7 +306,6 @@ static bool create_swapchain(struct Renderer* const r, bool old) {
 }
 
 static void create_descriptors(struct Renderer* const r) {	
-	return;
 	VkDescriptorSetLayoutBinding ubo_layout_binding = {
 		.binding = 0,
 		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -308,19 +314,28 @@ static void create_descriptors(struct Renderer* const r) {
 		.pImmutableSamplers = NULL,
 	};
 
-	VkDescriptorSetLayoutBinding sampler_layout_binding = {
+	VkDescriptorSetLayoutBinding texture_sampler_binding = {
 		.binding = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
 		.descriptorCount = 1,
-		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+		.pImmutableSamplers = NULL,
+	};
+	
+	VkDescriptorSetLayoutBinding texture_layout_binding = {
+		.binding = 2,
+		.descriptorCount = TEXTURE_ARRAY_SIZE,
+		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
 		.pImmutableSamplers = NULL,
 		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 	};
 
-	VkDescriptorSetLayoutBinding layout_bindings[] = { ubo_layout_binding, sampler_layout_binding };
+
+	VkDescriptorSetLayoutBinding layout_bindings[] = { ubo_layout_binding, texture_sampler_binding, texture_layout_binding };
 
 	VkDescriptorSetLayoutCreateInfo descriptor_layout_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = 2,
+		.bindingCount = 3,
 		.pBindings = layout_bindings,
 	};
 
@@ -353,14 +368,18 @@ static void create_descriptors(struct Renderer* const r) {
 		.descriptorCount = MAX_FRAMES_IN_FLIGHT,
 	},
 	{
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.type = VK_DESCRIPTOR_TYPE_SAMPLER,
 		.descriptorCount = MAX_FRAMES_IN_FLIGHT,
-	}
+	},
+	{
+		.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+		.descriptorCount = TEXTURE_ARRAY_SIZE * MAX_FRAMES_IN_FLIGHT,
+	},
 	};
 
 	VkDescriptorPoolCreateInfo pool_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-		.poolSizeCount = 2,
+		.poolSizeCount = 3,
 		.pPoolSizes = pool_sizes,
 		.maxSets = MAX_FRAMES_IN_FLIGHT,
 	};
@@ -388,11 +407,20 @@ static void create_descriptors(struct Renderer* const r) {
 			.range = sizeof(vec3),
 		};
 
-		VkDescriptorImageInfo image_info = {
-			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.imageView = r->texture_image_view,
+		VkDescriptorImageInfo sampler_info = {
 			.sampler = r->texture_sampler,
 		};
+
+		VkDescriptorImageInfo image_infos[TEXTURE_ARRAY_SIZE];
+		for (int j = 0; j < TEXTURE_ARRAY_SIZE; ++j) {
+			VkImageView view = r->scene->textures[j % r->scene->texture_count].image_view;
+			VkDescriptorImageInfo image_info = {
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageView = view,
+				.sampler = r->texture_sampler,
+			};
+			image_infos[j] = image_info;
+		}
 
 		VkWriteDescriptorSet descriptor_write = {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -404,17 +432,27 @@ static void create_descriptors(struct Renderer* const r) {
 			.pBufferInfo = &buffer_info,
 		};
 
-		VkWriteDescriptorSet image_write = {
+		VkWriteDescriptorSet sampler_write = {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.dstSet = r->descriptor_sets[i],
 			.dstBinding = 1,
 			.dstArrayElement = 0,
-			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
 			.descriptorCount = 1,
-			.pImageInfo = &image_info,
+			.pImageInfo = &sampler_info,
 		};
-		VkWriteDescriptorSet sets[] = {descriptor_write, image_write};
-		vkUpdateDescriptorSets(r->device, 2, sets, 0, NULL);
+		
+		VkWriteDescriptorSet image_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = r->descriptor_sets[i],
+			.dstBinding = 2,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+			.descriptorCount = TEXTURE_ARRAY_SIZE,
+			.pImageInfo = image_infos,
+		};
+		VkWriteDescriptorSet sets[] = {descriptor_write, sampler_write, image_write};
+		vkUpdateDescriptorSets(r->device, 3, sets, 0, NULL);
 	}
 }
 
@@ -574,6 +612,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		queue_infos[1] = queue_info;
 		queue_infos[1].queueFamilyIndex = r.present_queue_family;
 	}
+
 	//Logical device
 	const VkDeviceCreateInfo device_info = {
 		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, NULL, 0,
@@ -633,8 +672,6 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 	// 		load_texture(t.filepath, 0, 0, r.device, r.physical_device, r.command_buffers[0],r.graphics_queue, &scene->textures[i]);
 	// 	}
 	// }
-	load_textures(r.device, r.physical_device, r.command_buffers[0], r.graphics_queue, scene);
-	r.texture_image_view = scene->textures[1].image_view;
 	VkPhysicalDeviceProperties properties = {};	
 	vkGetPhysicalDeviceProperties(r.physical_device, &properties);
 
@@ -647,7 +684,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 		.anisotropyEnable = VK_TRUE,
 		.maxAnisotropy = properties.limits.maxSamplerAnisotropy,
-		.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+		.borderColor = VK_BORDER_COLOR_INT_TRANSPARENT_BLACK,
 		.unnormalizedCoordinates = VK_FALSE,
 		.compareEnable = VK_FALSE,
 		.compareOp = VK_COMPARE_OP_ALWAYS,
@@ -656,14 +693,16 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
 	};
+	r.scene = scene;
 	vkCreateSampler(r.device, &texture_sampler_info, NULL, &r.texture_sampler);
-	// create_descriptors(&r);
+	load_textures(r.device, r.physical_device, r.command_buffers[0], r.graphics_queue, r.scene);
+	create_descriptors(&r);
 	renderer_create_resolution(&r, 800, 600); //TODO: Resolution setting
 
 	//Camera
 	r.camera = (struct Camera) {
-		{0, -2, 0},
-		{0, 1, 0},
+		{0, 5, 0},
+		{0, -1, 0},
 		{0, 0, 1},
 		80, 1, 1, 64,
 		PERSPECTIVE
@@ -695,7 +734,6 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		);
 	}
 	r.mesh_count = scene->mesh_count;
-	r.scene = scene;
 	
 	*result = r;
 	return false;
@@ -711,17 +749,16 @@ void destroy_renderer(struct Renderer* const r) {
 	destroy_scene(r->device, *r->scene);
 	renderer_destroy_resolution(r);
 	vkDestroySwapchainKHR(r->device, r->swapchain, NULL);
-	// vkDestroyDescriptorSetLayout(r->device, r->descriptor_set_layout, NULL);
-	// vkDestroyDescriptorPool(r->device, r->descriptor_pool, NULL);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptor_set_layout, NULL);
+	vkDestroyDescriptorPool(r->device, r->descriptor_pool, NULL);
 	free(r->swapchain_images);
 	vkDestroySampler(r->device, r->texture_sampler, NULL);
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		// vkDestroyDescriptorSetLayout(r->device, r->descriptor_set_layout, NULL);
 		vkDestroySemaphore(r->device, r->image_available_semaphores[i], NULL);
 		vkDestroySemaphore(r->device, r->render_finished_semaphores[i], NULL);
 		vkDestroyFence(r->device, r->in_flight_fences[i], NULL);
-		// vkDestroyBuffer(r->device, r->uniform_buffers[i], NULL);
-		// free_allocation(r->device, r->uniform_mems[i]);
+		vkDestroyBuffer(r->device, r->uniform_buffers[i], NULL);
+		free_allocation(r->device, r->uniform_mems[i]);
 	}
 	vkDestroyCommandPool(r->device, r->command_pool, NULL);
 	cleanup_vertex_index_buffer(r->device, r->physical_device, &r->vertex_index_buffer);
@@ -1018,6 +1055,17 @@ void renderer_draw(struct Renderer* const r) {
 		0,
 		VK_INDEX_TYPE_UINT32
 	);
+
+	vkCmdBindDescriptorSets(
+		command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		r->pipeline_layout,
+		0,
+		1,
+		&r->descriptor_sets[r->current_frame],
+		0,
+		NULL
+	);
 	struct MemoryBlock* block = r->vertex_index_buffer.index_blocks;
 	struct MemoryBlock* v_block = r->vertex_index_buffer.vertex_blocks;
 	int count = 0;
@@ -1153,6 +1201,13 @@ void render_scene(struct Scene* scene, struct Node* node, mat4 parent_transform,
 		struct Mesh m = scene->meshes[node->meshes[i]];
 		struct MemoryBlock block = m.index_block;
 		struct MemoryBlock v_block = m.vertex_block;
+		int text_index = m.m.diffuse;
+		vkCmdPushConstants(
+			r->command_buffers[r->current_frame],
+			r->pipeline_layout,
+			VK_SHADER_STAGE_FRAGMENT_BIT,
+			sizeof(mat4), sizeof(struct Material), &m.m
+		);
 		vkCmdDrawIndexed(
 			r->command_buffers[r->current_frame], 
 			block.length_in_bytes / sizeof(uint32_t), 

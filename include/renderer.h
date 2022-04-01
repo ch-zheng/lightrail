@@ -9,6 +9,7 @@
 #include <vulkan/vulkan.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
+#define TEXTURE_ARRAY_SIZE 128
 
 static const char* const PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
 
@@ -55,10 +56,6 @@ struct Renderer {
 	uint32_t* vertex_indices;
 
 	// textures
-	VkBuffer texture_buffer;
-	struct Allocation texture_mem;
-	VkImage texture_image;
-	VkImageView texture_image_view;
 	VkSampler texture_sampler;
 
 	// uniforms and other shader data access

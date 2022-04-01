@@ -10,9 +10,9 @@ layout(push_constant) uniform Constants {
 	mat4 camera;
 };
 
-// layout(binding=0) uniform UniformStuff {
-// 	vec3 in_color;
-// } ubo;
+layout(set = 0, binding=0) uniform UniformStuff {
+	vec3 light_pos;
+} ubo;
 
 //Outputs
 layout(location=0) out vec2 out_texCoords;
