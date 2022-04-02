@@ -80,7 +80,7 @@ static VkResult create_pipeline(struct Renderer* const r) {
 	const VkPipelineVertexInputStateCreateInfo vertex_input = {
 		VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, NULL, 0,
 		1, &binding_description,
-		3, attribute_descriptions
+		5, attribute_descriptions
 	};
 	//Input assembly
 	const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
