@@ -5,6 +5,7 @@
 #include "assimp/cimport.h"
 #include "assimp/scene.h"
 #include "assimp/postprocess.h"
+#include "camera.h"
 #include "cglm/cglm.h"
 
 #include "vulkan/vulkan.h"
@@ -25,6 +26,7 @@ struct Texture {
 struct Material {
 	unsigned diffuse;
 	unsigned emissive;
+	unsigned normal_map;
 };
 
 struct Mesh {
@@ -58,6 +60,8 @@ struct Scene {
 	struct Texture* textures;
 	
 	struct Node* root;
+
+	struct Camera cam;
 };
 
 bool load_obj(const char* const, const char* const, struct Scene* scene);

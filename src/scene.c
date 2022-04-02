@@ -1,5 +1,6 @@
 #include "scene.h"
 #include "alloc.h"
+#include "camera.h"
 #include "cglm/mat4.h"
 #include "cglm/types.h"
 #include "renderer.h"
@@ -15,6 +16,9 @@
 #include "util.h"
 #include "vulkan/vulkan_core.h"
 #include <stdint.h>
+
+#define CGLTF_IMPLEMENTATION
+#include "cgltf/cgltf.h"
 
 // returns the index of the texture of a given type for a given material
 // returns -1 if that type does not exist
@@ -50,13 +54,58 @@ static int get_texture_types(enum aiTextureType texture_type, struct aiMaterial*
 // load a gltf file
 // it is important that dir has a trailing slash
 bool load_obj(const char* const dir, const char* const file_name, struct Scene* scene) {	
+	// cgltf_options options = {0};
+	// cgltf_data* data;
 	char full_path[1024];
 	strcpy(full_path, dir);
 	strcat(full_path, file_name);
+
+	// cgltf_result result = cgltf_parse_file(&options, full_path, &data);
+	
+	// if (result != cgltf_result_success)
+	// {
+	// 	exit(EXIT_FAILURE);
+	// }
+	// // data->nodes[0].
+
+	// cgltf_free(data);
+	
+
+
 	const struct aiScene* ai_scene = aiImportFile(full_path, 0); //aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType);
 	if (!ai_scene || ai_scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !ai_scene->mRootNode) {
 		return false;
 	}
+
+	struct Camera cam = (struct Camera) {
+		{0, 5, 0},
+		{0, -1, 0},
+		{0, 0, 1},
+		80, 1, 1, 64,
+		PERSPECTIVE
+	};
+
+	if (ai_scene->mNumCameras) {
+		struct aiCamera* ai_cam = ai_scene->mCameras[0];
+		float aspect_ratio = ai_cam->mAspect;
+		float fov = ai_cam->mHorizontalFOV;
+		float near = ai_cam->mClipPlaneNear;
+		float far = ai_cam->mClipPlaneFar;
+		struct aiVector3D pos = ai_cam->mPosition;
+		struct aiVector3D dir = ai_cam->mLookAt;
+		struct aiVector3D up = ai_cam->mUp;
+
+
+		cam.aspect_ratio = aspect_ratio;
+		cam.fov = fov;
+		cam.near = near;
+		cam.far = far;
+		cam.position[0] = pos.x; cam.position[1] = pos.y; cam.position[2] = pos.z;
+		cam.direction[0] = dir.x; cam.direction[1] = dir.y; cam.direction[2] = dir.z;
+		cam.up[0] = up.x; cam.up[1] = up.y; cam.up[2] = up.z;
+	}
+
+	scene->cam = cam;
 	
 	scene->material_count = ai_scene->mNumMaterials;
 	scene->materials = malloc(scene->material_count * sizeof(struct Material));
@@ -71,6 +120,7 @@ bool load_obj(const char* const dir, const char* const file_name, struct Scene* 
 		struct aiMaterial* ai_material = ai_scene->mMaterials[i];
 		material.diffuse = get_texture_types(aiTextureType_DIFFUSE, ai_material, scene, &textures_length, dir);
 		material.emissive = get_texture_types(aiTextureType_EMISSIVE, ai_material, scene, &textures_length, dir);
+		material.normal_map = get_texture_types(aiTextureType_NORMALS, ai_material, scene, &textures_length, dir);
 		scene->materials[i] = material;
 	}
 

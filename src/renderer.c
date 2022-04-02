@@ -694,19 +694,20 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		.maxLod = 0.0f,
 	};
 	r.scene = scene;
+	r.camera = r.scene->cam;
 	vkCreateSampler(r.device, &texture_sampler_info, NULL, &r.texture_sampler);
 	load_textures(r.device, r.physical_device, r.command_buffers[0], r.graphics_queue, r.scene);
 	create_descriptors(&r);
 	renderer_create_resolution(&r, 800, 600); //TODO: Resolution setting
 
 	//Camera
-	r.camera = (struct Camera) {
-		{0, 5, 0},
-		{0, -1, 0},
-		{0, 0, 1},
-		80, 1, 1, 64,
-		PERSPECTIVE
-	};
+	// r.camera = (struct Camera) {
+	// 	{0, 5, 0},
+	// 	{0, -1, 0},
+	// 	{0, 0, 1},
+	// 	80, 1, 1, 64,
+	// 	PERSPECTIVE
+	// };
 
 	struct VertexIndexBuffer vertex_index_buffer = {};
 	create_vertex_index_buffer(r.device, r.physical_device, &vertex_index_buffer, DEFAULT_VERTEX_BUFFER_SIZE, DEFAULT_INDEX_BUFFER_SIZE);
@@ -1072,7 +1073,7 @@ void renderer_draw(struct Renderer* const r) {
 
 	mat4 ident;
 	glm_mat4_identity(ident);
-	glm_scale(ident, (vec3) { 0.018, 0.018, 0.018 });
+	// glm_scale(ident, (vec3) { 0.018, 0.018, 0.018 });
 	// glm_rotate(ident, glm_rad(45), (vec3) { 0, 1, 0});
 	// glm_rotate(ident, glm_rad(180), (vec3) { 0, 1, 0});
 	// glm_rotate(ident, glm_rad(-90), (vec3) { 1, 0, 0});
