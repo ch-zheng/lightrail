@@ -3,10 +3,12 @@
 #include "camera.h"
 #include "cglm/mat4.h"
 #include "cglm/types.h"
+#include "cglm/vec3.h"
 #include "renderer.h"
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
+#include "assert.h"
 
 #include "assimp/cimport.h"
 #include "assimp/scene.h"
@@ -184,8 +186,12 @@ void process_mesh(struct aiMesh* ai_mesh, const struct aiScene *ai_scene, struct
 		memcpy(&vertex.pos, pos, sizeof(vec3));
 
 		struct aiVector3D ai_normal = ai_mesh->mNormals[i];
-		vec3 norm = { ai_normal.x, ai_normal.y, ai_normal.z };
-		memcpy(&vertex.normal, norm, sizeof(vec3));
+		vec3 normal = { ai_normal.x, ai_normal.y, ai_normal.z };
+		memcpy(&vertex.normal, normal, sizeof(vec3));
+
+		// vec3 tangent;
+
+		// memcpy(&vertex.tangent, tangent, sizeof(vec3));
 
 		if (ai_mesh->mTextureCoords[0]) {
             struct aiVector3D ai_texture_coord = ai_mesh->mTextureCoords[0][i];
@@ -210,10 +216,57 @@ void process_mesh(struct aiMesh* ai_mesh, const struct aiScene *ai_scene, struct
 			mesh->indices = (unsigned*) realloc(mesh->indices, sizeof(uint32_t) * 2*indices_len);
 			indices_len *= 2;
 		}
+
+		struct Vertex* triangle[3];
+
 		for (int j = 0; j < face.mNumIndices; ++j) {
+			assert(face.mNumIndices == 3);
 			mesh->indices[index] = face.mIndices[j];
+			triangle[j] = &mesh->vertices[mesh->indices[index]];
 			index+=1;
 		}
+
+		vec3 v1;
+		vec3 v2;
+		vec3 v3;
+		
+		vec3 uv1;
+		vec3 uv2;
+		vec3 uv3;
+
+		vec3 v2v1;
+		vec3 v3v1;
+		
+		vec3 v2v1_scaled;
+		vec3 v3v1_scaled;
+
+
+		glm_vec3_dup(triangle[0]->pos, v1);
+		glm_vec3_dup(triangle[1]->pos, v2);
+		glm_vec3_dup(triangle[2]->pos, v3);
+		glm_vec3_dup(triangle[0]->tex, uv1);
+		glm_vec3_dup(triangle[1]->tex, uv2);
+		glm_vec3_dup(triangle[2]->tex, uv3);
+		glm_vec3_sub(v2, v1, v2v1);
+		glm_vec3_sub(v3, v1, v3v1);
+		
+		float c2c1t = uv2[0] - uv1[0];
+		float c2c1b = uv2[1] - uv1[1];
+		float c3c1t = uv3[0] - uv1[0];
+		float c3c1b = uv3[1] - uv1[1];
+
+		// compute the tangent
+		glm_vec3_scale(v2v1, c3c1b, v2v1_scaled);
+		glm_vec3_scale(v3v1, c2c1b, v3v1_scaled);
+		glm_vec3_sub(v2v1_scaled, v3v1_scaled, triangle[0]->tangent);
+		glm_vec3_dup(triangle[0]->tangent, triangle[1]->tangent);
+		glm_vec3_dup(triangle[0]->tangent, triangle[2]->tangent);
+		// compute the bitangent 
+		glm_vec3_scale(v2v1, -c3c1t, v2v1_scaled);
+		glm_vec3_scale(v3v1, c2c1t, v3v1_scaled);
+		glm_vec3_add(v2v1_scaled, v3v1_scaled, triangle[0]->bitangent);
+		glm_vec3_dup(triangle[0]->bitangent, triangle[1]->bitangent);
+		glm_vec3_dup(triangle[0]->bitangent, triangle[2]->bitangent);
 	}
 	mesh->m = scene->materials[ai_mesh->mMaterialIndex];
 } 

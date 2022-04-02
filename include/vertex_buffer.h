@@ -8,9 +8,11 @@
 #define DEFAULT_INDEX_BUFFER_SIZE 25000000
 
 struct Vertex {
-	float pos[3]; //Position
-	float tex[2]; //Texture coordinates
-	float normal[3]; //Normal vector
+	vec3 pos; //Position
+	vec2 tex; //Texture coordinates
+	vec3 normal; //Normal vector
+    vec3 tangent; // tangent vector
+    vec3 bitangent; // bitangent vector
 };
 
 struct VertexIndexBuffer {
