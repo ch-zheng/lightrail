@@ -42,5 +42,5 @@ void main() {
 		// just a test to make sure normal maps are loaded
 		base_color = texture(sampler2D(textures[mat.normal_map_index], tex_sampler), in_tex_coords);
 	}
-	out_color = base_color;
+	out_color = vec4(in_color, 1.0);
 }

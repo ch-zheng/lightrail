@@ -12,6 +12,16 @@
 #include "alloc.h"
 #include "vertex_buffer.h"
 
+#define NUMBER_OF_LIGHTS 16
+
+struct Light {
+	vec3 pos;
+	vec3 color;
+};
+
+struct LightSet {
+	struct Light lights[NUMBER_OF_LIGHTS];
+};
 
 struct Texture {
 	uint32_t width;

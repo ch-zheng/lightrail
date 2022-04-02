@@ -349,7 +349,7 @@ static void create_descriptors(struct Renderer* const r) {
 	// TODO: find a use for this uniform
 	VkBufferCreateInfo uniform_buffer_info = {
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = sizeof(vec3),
+		.size = sizeof(struct LightSet),
 		.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 	};
@@ -978,9 +978,15 @@ static void update_uniform_buffers(struct Renderer* const r) {
 	float value = (float) (t % 3);
 	vec3 color = { 0.4999*value, 0.4f, 0.4f };
 
+	struct LightSet set;
+	for (int i = 0; i < NUMBER_OF_LIGHTS; ++i) {
+		glm_vec3_dup(color, set.lights[i].color);
+		glm_vec3_dup(color, set.lights[i].pos);
+	}
+
 	void* data;
-	vkMapMemory(r->device, r->uniform_mems[r->current_frame].memory, 0, sizeof(color), 0, &data);
-	memcpy(data, color, sizeof(vec3));
+	vkMapMemory(r->device, r->uniform_mems[r->current_frame].memory, 0, sizeof(set), 0, &data);
+	memcpy(data, &set, sizeof(set));
 	vkUnmapMemory(r->device, r->uniform_mems[r->current_frame].memory);
 }
 
@@ -1009,7 +1015,7 @@ void renderer_draw(struct Renderer* const r) {
 		}
 	}
 
-	// update_uniform_buffers(r);
+	update_uniform_buffers(r);
 
 	//Record command buffer
 	const VkCommandBufferBeginInfo begin_info = {
