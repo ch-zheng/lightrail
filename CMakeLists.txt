@@ -48,9 +48,6 @@ set(IMGUI_SOURCES ./external/cimgui/cimgui.cpp
 	${TABLES_SOURCE} 
 )
 
-set(IMGUI_SOURCES_sdl)
-set(IMGUI_LIBRARIES )
-
 if (WIN32)
     add_definitions("-DIMGUI_IMPL_API=extern \"C\" __declspec\(dllexport\)")
 else(WIN32)
@@ -58,33 +55,10 @@ else(WIN32)
 endif(WIN32)
 
 list(APPEND IMGUI_SOURCES ${BAKENDS_FOLDER}imgui_impl_vulkan.cpp)
-list(APPEND IMGUI_LIBRARIES ${Vulkan_LIBRARIES})
 list(APPEND IMGUI_SOURCES ${BAKENDS_FOLDER}imgui_impl_sdl.cpp)
 
-if(SDL2_FOUND)
-	get_target_property(SDL_INCLUDE SDL2::SDL2 INTERFACE_INCLUDE_DIRECTORIES)
-	message(STATUS "sdlinclude is " ${SDL_INCLUDE})
-	if ("${SDL_INCLUDE}" STREQUAL "" OR "${SDL_INCLUDE}" STREQUAL "SDL_INCLUDE-NOTFOUND") #if not found latest SDL2 cmake config use older
-		message(STATUS "sdlinclude2 is " ${SDL2_INCLUDE_DIRS})
-		include_directories(${SDL2_INCLUDE_DIRS})
-		set(IMGUI_SDL_LIBRARY ${SDL2_LIBRARIES})
-		message(STATUS IMGUI_SDL_LIBRARY ${SDL2_LIBRARIES})
-	else()#use new one SDL2 config
-		include_directories(${SDL_INCLUDE})
-		set(IMGUI_SDL_LIBRARY SDL2::SDL2)
-		set(SDL_MAIN SDL2::SDL2main)
-		message(STATUS ${SDL_MAIN} ${IMGUI_SDL_LIBRARY})
-	endif()
-else(SDL2_FOUND)
-	if(DEFINED SDL_PATH)
-		message(FATAL_ERROR "Cannot find SDL at SDL_PATH")
-	else(DEFINED SDL_PATH)
-		message(FATAL_ERROR "Cannot find SDL. Maybe try specifying SDL_PATH?")
-	endif(DEFINED SDL_PATH)
-endif(SDL2_FOUND)
-
 add_library(cimgui_sdl STATIC ${IMGUI_SOURCES})
-target_link_libraries(cimgui_sdl ${IMGUI_LIBRARIES} ${IMGUI_SDL_LIBRARY} ${Vulkan_LIBRARIES})
+target_link_libraries(cimgui_sdl ${SDL2_LIBRARY} ${Vulkan_LIBRARIES})
 target_include_directories(cimgui_sdl PRIVATE ./external/cimgui/imgui/ ./external/cimgui/imgui/backends/)
 
 # Main Executable
@@ -109,4 +83,5 @@ target_sources(
 )
 add_dependencies(lightrail shaders cimgui_sdl)
 target_compile_definitions(lightrail PUBLIC CIMGUI_DEFINE_ENUMS_AND_STRUCTS)
+set_target_properties(lightrail PROPERTIES LINKER_LANGUAGE C)
 target_link_libraries(lightrail ${Vulkan_LIBRARIES} ${SDL2_LIBRARIES} ${cglm_LIBRARIES} ${ASSIMP_LIBRARIES} cimgui_sdl)

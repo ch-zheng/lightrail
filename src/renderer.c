@@ -16,7 +16,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
 
-#define REQUIRED_EXT_COUNT 1
+#define REQUIRED_EXT_COUNT 2
 
 static VkShaderModule create_shader_module(
 	const struct Renderer* const r,
@@ -506,7 +506,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 	vkEnumeratePhysicalDevices(r.instance, &device_count, devices);
 	//Device info
 	bool device_found = false;
-	const char* required_extensions[REQUIRED_EXT_COUNT] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+	const char* required_extensions[REQUIRED_EXT_COUNT] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_portability_subset"};
 	unsigned format_count, present_mode_count;
 	for (size_t i = 0; i < device_count; ++i) {
 		const VkPhysicalDevice device = devices[i];
@@ -619,13 +619,17 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		queue_infos[1].queueFamilyIndex = r.present_queue_family;
 	}
 
+	VkPhysicalDeviceFeatures features = {
+		.samplerAnisotropy = VK_TRUE,
+		.sampleRateShading = VK_TRUE,
+	};
 	//Logical device
 	const VkDeviceCreateInfo device_info = {
 		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, NULL, 0,
 		queue_info_count, queue_infos,
 		0, NULL, //Layers
 		REQUIRED_EXT_COUNT, required_extensions, //Extensions
-		NULL //Features
+		&features, //Features
 	};
 	vkCreateDevice(r.physical_device, &device_info, NULL, &r.device);
 	//Queue handles

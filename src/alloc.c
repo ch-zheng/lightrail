@@ -21,7 +21,26 @@ static void change_image_layout(VkImage* image, VkImageLayout old, VkImageLayout
 		.srcAccessMask = 0,
 		.dstAccessMask = 0,
 	};
-	vkCmdPipelineBarrier(*command_buffer, 0, 0, 0, 0, NULL, 0, NULL, 1, &barrier);
+
+	VkPipelineStageFlags source;
+	VkPipelineStageFlags dest;
+
+	if (old == VK_IMAGE_LAYOUT_UNDEFINED && new == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+		source = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		dest = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	} else if (old == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+		source = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		dest = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	} else {
+		abort();
+	}
+	vkCmdPipelineBarrier(*command_buffer, source, dest, 0, 0, NULL, 0, NULL, 1, &barrier);
 }
 
 //Note: Do not put buffers & images in the same allocation
@@ -178,7 +197,7 @@ void staged_buffer_write(
 	//Parameters
 	const unsigned count,
 	VkBuffer* const dst_buffers,
-	const void** const data,
+	void** const data,
 	const VkDeviceSize* sizes,
 	const VkDeviceSize* dest_offsets) {
 	VkDeviceSize total_size = 0;
@@ -256,7 +275,7 @@ void staged_buffer_write_to_image(
 	//Parameters
 	const unsigned count,
 	VkImage* const dst_images,
-	const void** const data,
+	void** const data,
 	const VkDeviceSize* sizes,
 	VkFormat* formats,
 	VkImageLayout* old_layouts,

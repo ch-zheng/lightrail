@@ -59,7 +59,7 @@ void staged_buffer_write(
 	//Parameters
 	const unsigned count,
 	VkBuffer* const dst_buffers,
-	const void** const data,
+	void** const data,
 	const VkDeviceSize* sizes,
 	const VkDeviceSize* dest_offsets);
 
@@ -72,7 +72,7 @@ void staged_buffer_write_to_image(
 	//Parameters
 	const unsigned count,
 	VkImage* const dst_images,
-	const void** const data,
+	void** const data,
 	const VkDeviceSize* sizes,
 	VkFormat* formats,
 	VkImageLayout* old_layouts,
