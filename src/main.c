@@ -3,6 +3,9 @@
 #include "cglm/vec3.h"
 #include "renderer.h"
 
+#include "cimgui.h"
+#include "cimgui_impl.h"
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
@@ -19,10 +22,9 @@ struct Inputs {
 	bool rotate_up, rotate_down, rotate_left, rotate_right;
 };
 
-
 int main() {
 	struct Scene scene;
-	load_obj("/Users/hang/code/lightrail/models/AntiqueCamera/glTF/", "AntiqueCamera.gltf", &scene);
+	load_obj("/Users/hang/code/lightrail/models/DamagedHelmet/glTF/", "DamagedHelmet.gltf", &scene);
 	
 	//SDL Initialization
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -71,6 +73,7 @@ int main() {
 		start = clock();
 		//Event handling
 		while (SDL_PollEvent(&event)) {
+			ImGui_ImplSDL2_ProcessEvent(&event);
 			switch (event.type) {
 				vec3 delta;
 				case SDL_KEYDOWN:
@@ -169,7 +172,6 @@ int main() {
 					break;
 			}
 		}
-
 		//Input handling
 		//Movement
 		vec3 movement = {0, 0, 0}, side;
@@ -200,13 +202,18 @@ int main() {
 		if (inputs.rotate_right)
 			glm_vec3_rotate(renderer.camera.direction, -angular_velocity * delta, renderer.camera.up);
 
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplSDL2_NewFrame();
+		igNewFrame();
+
 		//Rendering
 		if (shown && !minimized) {
+			igShowDemoWindow(&shown);
 			renderer_draw(&renderer);
 		} else {
 			sleep(1);
 		}
+		igEndFrame();
 	}
-
 	destroy_renderer(&renderer);
 }

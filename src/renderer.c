@@ -2,7 +2,9 @@
 #include "alloc.h"
 #include "camera.h"
 #include "cglm/affine.h"
+#include "cimgui.h"
 #include "scene.h"
+#include "util.h"
 #include "vertex_buffer.h"
 #include "vulkan/vulkan_core.h"
 #include <stdint.h>
@@ -408,7 +410,7 @@ static void create_descriptors(struct Renderer* const r) {
 		VkDescriptorBufferInfo buffer_info = {
 			.buffer = r->uniform_buffers[i],
 			.offset = 0,
-			.range = sizeof(vec3),
+			.range = sizeof(struct LightSet),
 		};
 
 		VkDescriptorImageInfo sampler_info = {
@@ -703,7 +705,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 	load_textures(r.device, r.physical_device, r.command_buffers[0], r.graphics_queue, r.scene);
 	create_descriptors(&r);
 	renderer_create_resolution(&r, 800, 600); //TODO: Resolution setting
-
+	renderer_init_imgui(&r);
 	//Camera
 	// r.camera = (struct Camera) {
 	// 	{0, 5, 0},
@@ -756,6 +758,8 @@ void destroy_renderer(struct Renderer* const r) {
 	vkDestroySwapchainKHR(r->device, r->swapchain, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptor_set_layout, NULL);
 	vkDestroyDescriptorPool(r->device, r->descriptor_pool, NULL);
+	vkDestroyDescriptorPool(r->device, r->imgui_descriptor_pool, NULL);
+	ImGui_ImplVulkan_Shutdown();
 	free(r->swapchain_images);
 	vkDestroySampler(r->device, r->texture_sampler, NULL);
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -993,6 +997,7 @@ static void update_uniform_buffers(struct Renderer* const r) {
 void renderer_draw(struct Renderer* const r) {
 	// vec3 look = {12.0f, 0.0f, 0.0f };
 	// camera_look(&r->camera, look);
+	igRender();
 	r->current_frame = (r->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 
 	vkWaitForFences(r->device, 1, &r->in_flight_fences[r->current_frame], VK_TRUE, UINT64_MAX);
@@ -1088,7 +1093,9 @@ void renderer_draw(struct Renderer* const r) {
 	// glm_rotate(ident, glm_rad(180), (vec3) { 0, 1, 0});
 	// glm_rotate(ident, glm_rad(-90), (vec3) { 1, 0, 0});
 	render_scene(r->scene, r->scene->root, ident, r);
-// 
+//	
+	ImGui_ImplVulkan_NewFrame();
+	ImGui_ImplVulkan_RenderDrawData(igGetDrawData(), command_buffer, NULL);
 	vkCmdEndRenderPass(command_buffer);
 	//Blit render target to swapchain image
 	const VkImageSubresourceRange color_subresource_range = {
@@ -1231,4 +1238,63 @@ void render_scene(struct Scene* scene, struct Node* node, mat4 parent_transform,
 	for (int i = 0; i < node->child_count; ++i) {
 		render_scene(scene, &node->children[i], model, r);
 	}	
+}
+
+void renderer_init_imgui(struct Renderer *const r) {
+	VkDescriptorPoolSize pool_sizes[] =
+	{
+		{ VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+	};
+	
+	VkDescriptorPoolCreateInfo pool_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+		.maxSets = 1000,
+		.poolSizeCount = 11,
+		.pPoolSizes = pool_sizes,
+	};
+
+	vkCreateDescriptorPool(r->device, &pool_info, NULL, &r->imgui_descriptor_pool);
+
+	igCreateContext(NULL);
+	ImGui_ImplSDL2_InitForVulkan(r->window);
+	ImGui_ImplVulkan_InitInfo init_info = {
+		.Instance = r->instance,
+		.PhysicalDevice = r->physical_device,
+		.Device = r->device,
+		.Queue = r->graphics_queue,
+		.DescriptorPool = r->imgui_descriptor_pool,
+		.MinImageCount = r->swapchain_image_count,
+		.ImageCount = r->swapchain_image_count,
+		.MSAASamples = VK_SAMPLE_COUNT_4_BIT,
+	};
+
+	ImGui_ImplVulkan_Init(&init_info, r->render_pass);
+	const VkCommandBufferBeginInfo begin_info = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
+		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	VkCommandBuffer buff = r->command_buffers[0];
+	vkBeginCommandBuffer(buff, &begin_info);
+
+	ImGui_ImplVulkan_CreateFontsTexture(buff);
+	VkSubmitInfo submit_info = {
+		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
+		0, NULL,
+		0,
+		1, &buff,
+		0, NULL
+	};
+	flush_command_buffer(&r->device, &buff, &r->graphics_queue, &submit_info);
+	vkResetCommandBuffer(buff, 0);
 }

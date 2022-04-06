@@ -39,8 +39,7 @@ void main() {
 		base_color += 1.0 * base_color;
 	}
 	if (mat.normal_map_index >= 0) {
-		// just a test to make sure normal maps are loaded
-		base_color = texture(sampler2D(textures[mat.normal_map_index], tex_sampler), in_tex_coords);
 	}
-	out_color = vec4(in_color, 1.0);
+
+	out_color = base_color;
 }

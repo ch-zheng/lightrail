@@ -7,6 +7,8 @@
 #include <stdbool.h>
 #include <SDL2/SDL.h>
 #include <vulkan/vulkan.h>
+#include "cimgui.h"
+#include "cimgui_impl.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define TEXTURE_ARRAY_SIZE 128
@@ -69,6 +71,7 @@ struct Renderer {
 	VkImageView texture_imageviews[MAX_FRAMES_IN_FLIGHT];
 
 	VkDescriptorPool descriptor_pool;
+	VkDescriptorPool imgui_descriptor_pool;
 	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
 
 	struct Scene* scene;
@@ -81,3 +84,4 @@ VkResult renderer_create_resolution(struct Renderer* const, unsigned, unsigned);
 void renderer_destroy_resolution(struct Renderer* const);
 void renderer_draw(struct Renderer* const);
 void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct Renderer* const r);	
+void renderer_init_imgui(struct Renderer* const r);
