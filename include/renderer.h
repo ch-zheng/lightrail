@@ -11,7 +11,7 @@
 #include "cimgui_impl.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
-#define TEXTURE_ARRAY_SIZE 128
+#define TEXTURE_ARRAY_SIZE 100
 
 static const char* const PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
 
@@ -62,26 +62,25 @@ struct Renderer {
 
 	// uniforms and other shader data access
 	VkDescriptorSetLayout descriptor_set_layout;
+	VkDescriptorSetLayout descriptor_set_layout_textures;
 	
 	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
 	struct Allocation uniform_mems[MAX_FRAMES_IN_FLIGHT];
 
-	VkImage texture_images[MAX_FRAMES_IN_FLIGHT];
-	struct Allocation texture_mems[MAX_FRAMES_IN_FLIGHT];
-	VkImageView texture_imageviews[MAX_FRAMES_IN_FLIGHT];
-
 	VkDescriptorPool descriptor_pool;
 	VkDescriptorPool imgui_descriptor_pool;
 	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
+	VkDescriptorSet texture_descriptor_set;
 
 	struct Scene* scene;
 };
 
 //Renderer methods
-bool create_renderer(SDL_Window*, struct Renderer* const, struct Scene* scene);
+bool create_renderer(SDL_Window*, struct Renderer* const);
 void destroy_renderer(struct Renderer* const);
 VkResult renderer_create_resolution(struct Renderer* const, unsigned, unsigned);
 void renderer_destroy_resolution(struct Renderer* const);
 void renderer_draw(struct Renderer* const);
-void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct Renderer* const r);	
+void render_scene(struct Scene* scene, struct Node* node, mat4 transform, struct Renderer* const r);
+void renderer_add_scene(struct Scene* scene, struct Renderer* const renderer);
 void renderer_init_imgui(struct Renderer* const r);

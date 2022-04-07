@@ -79,7 +79,7 @@ void resize_vertex_index_buffer(VkDevice device, VkPhysicalDevice physical_devic
 	VkBuffer new_vertex;
 	VkBuffer new_index;
 
-	struct Allocation new_vertex_alloc;
+	struct Allocation new_vertex_alloc; 
 	struct Allocation new_index_alloc;
 
 	new_buff.vertex_size = new_vertex_size;

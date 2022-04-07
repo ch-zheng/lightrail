@@ -24,7 +24,7 @@ struct Inputs {
 
 int main() {
 	struct Scene scene;
-	load_obj("/Users/hang/code/lightrail/models/DamagedHelmet/glTF/", "DamagedHelmet.gltf", &scene);
+	load_gltf("/Users/hang/code/lightrail/models/Sponza/glTF/", "Sponza.gltf", &scene);
 	
 	//SDL Initialization
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -58,7 +58,8 @@ int main() {
 
 	//Renderer
 	struct Renderer renderer = {};
-	create_renderer(window, &renderer, &scene);
+	create_renderer(window, &renderer);
+	renderer_add_scene(&scene, &renderer);
 
 	vec3 camera_speed = {10.11, 10.11, 10.11};
 	vec3 camera_front = { 0.0, 0.0, 1.0 };

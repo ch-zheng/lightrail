@@ -68,7 +68,6 @@ target_include_directories(lightrail PUBLIC ./include)
 if(APPLE)
 	target_include_directories(lightrail PRIVATE /opt/homebrew/include)
 endif(APPLE)
-message(STATUS ${ASSIMP_LIBRARIES})
 target_include_directories(lightrail PRIVATE /opt/homebrew/include ${Vulkan_INCLUDE_DIRS} ${SDL2_INCLUDE_DIRS} ${cglm_INCLUDE_DIRS} ${ASSIMP_INCLUDE_DIRS})
 target_sources(
 	lightrail PUBLIC

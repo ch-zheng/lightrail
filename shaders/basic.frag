@@ -1,4 +1,5 @@
 #version 460
+#extension GL_EXT_nonuniform_qualifier : require
 
 struct Material {
 	int base_color_index;
@@ -12,7 +13,7 @@ layout(location=1) in vec3 in_color;
 
 //Descriptors
 layout(set=0, binding=1) uniform sampler tex_sampler;
-layout(set=0, binding=2) uniform texture2D textures[128];
+layout(set=1, binding=0) uniform texture2D textures[];
 
 //Outputs
 layout(location=0) out vec4 out_color;

@@ -16,7 +16,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
 
-#define REQUIRED_EXT_COUNT 2
+#define REQUIRED_EXT_COUNT 3
 
 static VkShaderModule create_shader_module(
 	const struct Renderer* const r,
@@ -172,11 +172,12 @@ static VkResult create_pipeline(struct Renderer* const r) {
 
 	VkPushConstantRange push_contants[] = {camera_constant, texture_index_constant};
 
+	VkDescriptorSetLayout layouts[] = { r->descriptor_set_layout, r->descriptor_set_layout_textures };
 	// create descriptor layout
 	// create_descriptor_layouts(r);
 	const VkPipelineLayoutCreateInfo layout_info = {
 		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0,
-		1, &r->descriptor_set_layout, //TODO: Descriptor layout
+		2, layouts, 
 		2, push_contants
 	};
 	// const VkPipelineLayoutCreateInfo layout_info = {
@@ -328,8 +329,18 @@ static void create_descriptors(struct Renderer* const r) {
 		.pImmutableSamplers = NULL,
 	};
 	
+	// VkDescriptorBindingFlagsEXT bind_flag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT;
+	VkDescriptorBindingFlags bind_flag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;
+	VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extended_layout_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT,
+		.pNext = NULL,
+		.bindingCount = 1,
+		.pBindingFlags = &bind_flag,
+	};
+
+	
 	VkDescriptorSetLayoutBinding texture_layout_binding = {
-		.binding = 2,
+		.binding = 0,
 		.descriptorCount = TEXTURE_ARRAY_SIZE,
 		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
 		.pImmutableSamplers = NULL,
@@ -337,15 +348,24 @@ static void create_descriptors(struct Renderer* const r) {
 	};
 
 
-	VkDescriptorSetLayoutBinding layout_bindings[] = { ubo_layout_binding, texture_sampler_binding, texture_layout_binding };
+	VkDescriptorSetLayoutBinding layout_bindings[] = { ubo_layout_binding, texture_sampler_binding };
 
-	VkDescriptorSetLayoutCreateInfo descriptor_layout_info = {
+	VkDescriptorSetLayoutCreateInfo descriptor_layout_info_0 = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = 3,
+		.bindingCount = 2,
 		.pBindings = layout_bindings,
 	};
+	
+	VkDescriptorSetLayoutCreateInfo descriptor_layout_info_1 = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 1,
+		.pBindings = &texture_layout_binding,
+		.pNext = &extended_layout_info,
+		.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT,
+	};
 
-	vkCreateDescriptorSetLayout(r->device, &descriptor_layout_info, NULL, &r->descriptor_set_layout);
+	vkCreateDescriptorSetLayout(r->device, &descriptor_layout_info_0, NULL, &r->descriptor_set_layout);
+	vkCreateDescriptorSetLayout(r->device, &descriptor_layout_info_1, NULL, &r->descriptor_set_layout_textures);
 
 	// create the buffers
 	// TODO: find a use for this uniform
@@ -379,7 +399,7 @@ static void create_descriptors(struct Renderer* const r) {
 	},
 	{
 		.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-		.descriptorCount = TEXTURE_ARRAY_SIZE * MAX_FRAMES_IN_FLIGHT,
+		.descriptorCount = TEXTURE_ARRAY_SIZE,
 	},
 	};
 
@@ -387,7 +407,8 @@ static void create_descriptors(struct Renderer* const r) {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		.poolSizeCount = 3,
 		.pPoolSizes = pool_sizes,
-		.maxSets = MAX_FRAMES_IN_FLIGHT,
+		.maxSets = MAX_FRAMES_IN_FLIGHT + 1,
+		.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT,
 	};
 
 	vkCreateDescriptorPool(r->device, &pool_info, NULL, &r->descriptor_pool);
@@ -404,8 +425,15 @@ static void create_descriptors(struct Renderer* const r) {
 		.pSetLayouts = layouts,
 	};
 
-	vkAllocateDescriptorSets(r->device, &descriptor_alloc_info, r->descriptor_sets);
+	VkDescriptorSetAllocateInfo texture_alloc_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptor_pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &r->descriptor_set_layout_textures,
+	};
 
+	vkAllocateDescriptorSets(r->device, &descriptor_alloc_info, r->descriptor_sets);
+	vkAllocateDescriptorSets(r->device, &texture_alloc_info, &r->texture_descriptor_set);
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 		VkDescriptorBufferInfo buffer_info = {
 			.buffer = r->uniform_buffers[i],
@@ -416,17 +444,6 @@ static void create_descriptors(struct Renderer* const r) {
 		VkDescriptorImageInfo sampler_info = {
 			.sampler = r->texture_sampler,
 		};
-
-		VkDescriptorImageInfo image_infos[TEXTURE_ARRAY_SIZE];
-		for (int j = 0; j < TEXTURE_ARRAY_SIZE; ++j) {
-			VkImageView view = r->scene->textures[j % r->scene->texture_count].image_view;
-			VkDescriptorImageInfo image_info = {
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.imageView = view,
-				.sampler = r->texture_sampler,
-			};
-			image_infos[j] = image_info;
-		}
 
 		VkWriteDescriptorSet descriptor_write = {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -448,21 +465,22 @@ static void create_descriptors(struct Renderer* const r) {
 			.pImageInfo = &sampler_info,
 		};
 		
-		VkWriteDescriptorSet image_write = {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = r->descriptor_sets[i],
-			.dstBinding = 2,
-			.dstArrayElement = 0,
-			.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-			.descriptorCount = TEXTURE_ARRAY_SIZE,
-			.pImageInfo = image_infos,
-		};
-		VkWriteDescriptorSet sets[] = {descriptor_write, sampler_write, image_write};
-		vkUpdateDescriptorSets(r->device, 3, sets, 0, NULL);
+		VkWriteDescriptorSet sets[] = {descriptor_write, sampler_write};
+		vkUpdateDescriptorSets(r->device, 2, sets, 0, NULL);
 	}
+	// VkWriteDescriptorSet image_write = {
+	// 	.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+	// 	.dstSet = r->texture_descriptor_set,
+	// 	.dstBinding = 0,
+	// 	.dstArrayElement = 0,
+	// 	.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+	// 	.descriptorCount = 0,
+	// 	.pImageInfo = NULL,
+	// };
+	// vkUpdateDescriptorSets(r->device, 1, &image_write, 0, NULL);
 }
 
-bool create_renderer(SDL_Window* window, struct Renderer* const result, struct Scene* scene) {
+bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	struct Renderer r;
 	r.window = window;
 
@@ -506,7 +524,11 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 	vkEnumeratePhysicalDevices(r.instance, &device_count, devices);
 	//Device info
 	bool device_found = false;
-	const char* required_extensions[REQUIRED_EXT_COUNT] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_portability_subset"};
+	const char* required_extensions[REQUIRED_EXT_COUNT] = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME, 
+		"VK_KHR_portability_subset", 
+		"VK_EXT_descriptor_indexing" 
+	};
 	unsigned format_count, present_mode_count;
 	for (size_t i = 0; i < device_count; ++i) {
 		const VkPhysicalDevice device = devices[i];
@@ -623,13 +645,29 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		.samplerAnisotropy = VK_TRUE,
 		.sampleRateShading = VK_TRUE,
 	};
+	
+	VkPhysicalDeviceDescriptorIndexingFeaturesEXT indexing_features = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT,
+		.pNext = NULL,
+		.descriptorBindingPartiallyBound = VK_TRUE,
+		// .runtimeDescriptorArray = VK_TRUE,
+		.shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
+		.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+		.runtimeDescriptorArray = VK_TRUE,
+	};
+
 	//Logical device
 	const VkDeviceCreateInfo device_info = {
-		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, NULL, 0,
-		queue_info_count, queue_infos,
-		0, NULL, //Layers
-		REQUIRED_EXT_COUNT, required_extensions, //Extensions
-		&features, //Features
+		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, 
+		.pNext = &indexing_features, 
+		.flags = 0,
+		.queueCreateInfoCount = queue_info_count, 
+		.pQueueCreateInfos =  queue_infos,
+		.enabledLayerCount = 0, 
+		.ppEnabledLayerNames = NULL, //Layers
+		.enabledExtensionCount = REQUIRED_EXT_COUNT, 
+		.ppEnabledExtensionNames = required_extensions, //Extensions
+		.pEnabledFeatures = &features, //Features
 	};
 	vkCreateDevice(r.physical_device, &device_info, NULL, &r.device);
 	//Queue handles
@@ -703,48 +741,25 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result, struct S
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
 	};
-	r.scene = scene;
-	r.camera = r.scene->cam;
 	vkCreateSampler(r.device, &texture_sampler_info, NULL, &r.texture_sampler);
-	load_textures(r.device, r.physical_device, r.command_buffers[0], r.graphics_queue, r.scene);
+	// load_textures(r.device, r.physical_device, r.command_buffers[0], r.graphics_queue, r.scene);
 	create_descriptors(&r);
 	renderer_create_resolution(&r, 800, 600); //TODO: Resolution setting
 	renderer_init_imgui(&r);
 	//Camera
-	// r.camera = (struct Camera) {
-	// 	{0, 5, 0},
-	// 	{0, -1, 0},
-	// 	{0, 0, 1},
-	// 	80, 1, 1, 64,
-	// 	PERSPECTIVE
-	// };
-
+	r.camera = (struct Camera) {
+		{0, 5, 0},
+		{0, -1, 0},
+		{0, 0, 1},
+		80, 1, 1, 64,
+		PERSPECTIVE
+	};
+	r.scene = NULL;
+	r.mesh_count = 0;
 	struct VertexIndexBuffer vertex_index_buffer = {};
 	create_vertex_index_buffer(r.device, r.physical_device, &vertex_index_buffer, DEFAULT_VERTEX_BUFFER_SIZE, DEFAULT_INDEX_BUFFER_SIZE);
 	r.vertex_index_buffer = vertex_index_buffer;
 
-	for (int i = 0; i < scene->mesh_count; ++i) {
-		struct Mesh mesh = scene->meshes[i];
-
-		struct Vertex* vertices = (struct Vertex*) malloc(sizeof(struct Vertex) * mesh.vertex_count);
-		uint32_t* indices = (uint32_t*) malloc(sizeof(uint32_t) * mesh.index_count);
-		memcpy(vertices, mesh.vertices, sizeof(struct Vertex) * mesh.vertex_count);
-		memcpy(indices, mesh.indices, sizeof(uint32_t) * mesh.index_count);
-		write_vertex_index_buffer(
-			r.device,
-			r.physical_device,
-			&r.command_buffers[0],
-			&r.graphics_queue,
-			mesh.vertex_count,
-			vertices,
-			mesh.index_count,
-			indices,
-			&r.vertex_index_buffer,
-			&scene->meshes[i].vertex_block,
-			&scene->meshes[i].index_block	
-		);
-	}
-	r.mesh_count = scene->mesh_count;
 	
 	*result = r;
 	return false;
@@ -757,10 +772,11 @@ void destroy_renderer(struct Renderer* const r) {
 	// 	vkDestroyBuffer(r->device, r->vertex_buffers[i], NULL);
 	// free_allocation(r->device, r->vertex_alloc);
 	vkDeviceWaitIdle(r->device);
-	destroy_scene(r->device, *r->scene);
+	destroy_scene(r->device, r->scene);
 	renderer_destroy_resolution(r);
 	vkDestroySwapchainKHR(r->device, r->swapchain, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptor_set_layout, NULL);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptor_set_layout_textures, NULL);
 	vkDestroyDescriptorPool(r->device, r->descriptor_pool, NULL);
 	vkDestroyDescriptorPool(r->device, r->imgui_descriptor_pool, NULL);
 	ImGui_ImplVulkan_Shutdown();
@@ -1075,14 +1091,14 @@ void renderer_draw(struct Renderer* const r) {
 		0,
 		VK_INDEX_TYPE_UINT32
 	);
-
+	VkDescriptorSet sets[] = { r->descriptor_sets[r->current_frame], r->texture_descriptor_set };
 	vkCmdBindDescriptorSets(
 		command_buffer,
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
 		r->pipeline_layout,
 		0,
-		1,
-		&r->descriptor_sets[r->current_frame],
+		2,
+		sets,
 		0,
 		NULL
 	);
@@ -1096,8 +1112,9 @@ void renderer_draw(struct Renderer* const r) {
 	// glm_rotate(ident, glm_rad(45), (vec3) { 0, 1, 0});
 	// glm_rotate(ident, glm_rad(180), (vec3) { 0, 1, 0});
 	// glm_rotate(ident, glm_rad(-90), (vec3) { 1, 0, 0});
-	render_scene(r->scene, r->scene->root, ident, r);
-//	
+	if (r->scene) {
+		render_scene(r->scene, r->scene->root, ident, r);
+	}
 	ImGui_ImplVulkan_NewFrame();
 	ImGui_ImplVulkan_RenderDrawData(igGetDrawData(), command_buffer, NULL);
 	vkCmdEndRenderPass(command_buffer);
@@ -1206,6 +1223,9 @@ void renderer_draw(struct Renderer* const r) {
 }
 
 void render_scene(struct Scene* scene, struct Node* node, mat4 parent_transform, struct Renderer* const r) {
+	if (!scene) {
+		return;
+	}
 	mat4 model;
 	glm_mat4_mul(parent_transform, node->transform, model);
 	// glm_mat4_mul(node->transform, *parent_transform, model);
@@ -1301,4 +1321,57 @@ void renderer_init_imgui(struct Renderer *const r) {
 	};
 	flush_command_buffer(&r->device, &buff, &r->graphics_queue, &submit_info);
 	vkResetCommandBuffer(buff, 0);
+}
+
+void renderer_add_scene(struct Scene *scene, struct Renderer *const r) {
+	if (r->scene) {
+		destroy_scene(r->device, r->scene);
+		r->scene = NULL;
+	}
+	r->scene = scene;
+	for (int i = 0; i < scene->mesh_count; ++i) {
+		struct Mesh mesh = scene->meshes[i];
+
+		struct Vertex* vertices = (struct Vertex*) malloc(sizeof(struct Vertex) * mesh.vertex_count);
+		uint32_t* indices = (uint32_t*) malloc(sizeof(uint32_t) * mesh.index_count);
+		memcpy(vertices, mesh.vertices, sizeof(struct Vertex) * mesh.vertex_count);
+		memcpy(indices, mesh.indices, sizeof(uint32_t) * mesh.index_count);
+		write_vertex_index_buffer(
+			r->device,
+			r->physical_device,
+			&r->command_buffers[r->current_frame],
+			&r->graphics_queue,
+			mesh.vertex_count,
+			vertices,
+			mesh.index_count,
+			indices,
+			&r->vertex_index_buffer,
+			&scene->meshes[i].vertex_block,
+			&scene->meshes[i].index_block	
+		);
+	}
+	r->mesh_count = scene->mesh_count;
+	load_textures(r->device, r->physical_device, r->command_buffers[r->current_frame], r->graphics_queue, r->scene);
+	VkDescriptorImageInfo image_infos[TEXTURE_ARRAY_SIZE];
+	assert(scene->texture_count <= TEXTURE_ARRAY_SIZE);	
+	for (int j = 0; j < scene->texture_count; ++j) {
+		VkImageView view = r->scene->textures[j].image_view;
+		VkDescriptorImageInfo image_info = {
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.imageView = view,
+			.sampler = r->texture_sampler,
+		};
+		image_infos[j] = image_info;
+	}
+	VkWriteDescriptorSet image_write = {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = r->texture_descriptor_set,
+		.dstBinding = 0,
+		.dstArrayElement = 0,
+		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+		.descriptorCount = scene->texture_count,
+		.pImageInfo = image_infos,
+	};
+	VkWriteDescriptorSet sets[] = {image_write};
+	vkUpdateDescriptorSets(r->device, 1, sets, 0, NULL);
 }

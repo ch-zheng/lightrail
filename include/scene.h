@@ -74,9 +74,9 @@ struct Scene {
 	struct Camera cam;
 };
 
-bool load_obj(const char* const, const char* const, struct Scene* scene);
+bool load_gltf(const char* const, const char* const, struct Scene* scene);
 void process_node(struct aiNode* ai_node, struct Node* node, const struct aiScene* ai_scene, struct Scene* scene);
 void process_mesh(struct aiMesh* ai_mesh, const struct aiScene* ai_scene, struct Mesh* mesh, struct Scene* scene);
-void destroy_scene(VkDevice dev, struct Scene);
+void destroy_scene(VkDevice dev, struct Scene* scene);
 void load_textures(VkDevice device, VkPhysicalDevice phys_dev, VkCommandBuffer comm_buff, VkQueue queue, struct Scene* scene);
 void destroy_node(struct Node* node);

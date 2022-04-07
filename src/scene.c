@@ -55,7 +55,7 @@ static int get_texture_types(enum aiTextureType texture_type, struct aiMaterial*
 
 // load a gltf file
 // it is important that dir has a trailing slash
-bool load_obj(const char* const dir, const char* const file_name, struct Scene* scene) {	
+bool load_gltf(const char* const dir, const char* const file_name, struct Scene* scene) {	
 	// cgltf_options options = {0};
 	// cgltf_data* data;
 	char full_path[1024];
@@ -278,19 +278,22 @@ void destroy_node(struct Node* node) {
 	free(node->children);
 }
 
-void destroy_scene(VkDevice dev, struct Scene scene) {
-	if (scene.mesh_count) {
-		free(scene.meshes);
+void destroy_scene(VkDevice dev, struct Scene* scene) {
+	if (!scene) {
+		return;
 	}
-	free(scene.materials);
-	for (int i = 0; i < scene.texture_count; ++i) {
-		vkDestroyImage(dev, scene.textures[i].image, NULL);
-		vkDestroyImageView(dev, scene.textures[i].image_view, NULL);
-		free_allocation(dev, scene.textures[i].texture_alloc);
+	if (scene->mesh_count) {
+		free(scene->meshes);
 	}
-	free(scene.textures);
-	destroy_node(scene.root);
-	free(scene.root);
+	free(scene->materials);
+	for (int i = 0; i < scene->texture_count; ++i) {
+		vkDestroyImage(dev, scene->textures[i].image, NULL);
+		vkDestroyImageView(dev, scene->textures[i].image_view, NULL);
+		free_allocation(dev, scene->textures[i].texture_alloc);
+	}
+	free(scene->textures);
+	destroy_node(scene->root);
+	free(scene->root);
 }
 
 
