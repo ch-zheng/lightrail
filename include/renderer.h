@@ -32,7 +32,7 @@ struct Renderer {
 	VkDescriptorPool descriptor_pool;
 	VkDescriptorSet descriptor_set;
 	//VkSampleCountFlagBits sample_count;
-	//VkPipelineCache pipeline_cache;
+	VkPipelineCache pipeline_cache;
 
 	//Swapchain
 	VkExtent2D surface_extent;

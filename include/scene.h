@@ -74,5 +74,5 @@ struct Scene {
 
 //bool load_obj(const char* const, struct Mesh*);
 bool load_scene(const char* const, struct Scene*);
-//void scene_update_transformations(struct Scene*);
+void scene_update_transformations(struct Scene*);
 void destroy_scene(struct Scene);

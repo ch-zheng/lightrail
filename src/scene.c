@@ -102,44 +102,54 @@ bool load_scene(const char* const filename, struct Scene* output) {
 	} else return true;
 }
 
-/*
 void scene_update_transformations(struct Scene* scene) {
-	//Initialize root node
-	struct Node root = scene->nodes[0];
-	if (!root.valid_transform)
-		glm_mat4_identity(root.transformation);
-	//Traverse node tree
+	//Find root nodes
+	bool* const root_mask = malloc(scene->node_count * sizeof(bool));
+	memset(root_mask, true, scene->node_count);
+	for (unsigned i = 0; i < scene->node_count; ++i) {
+		const struct Node node = scene->nodes[i];
+		for (unsigned i = 0; i < node.child_count; ++i)
+			root_mask[node.children[i]] = false;
+	}
+	unsigned root_count = 0;
+	for (unsigned i = 0; i < scene->node_count; ++i)
+		root_count += root_mask[i];
+	unsigned* const roots = malloc(root_count * sizeof(unsigned));
+	root_count = 0;
+	for (unsigned i = 0; i < scene->node_count; ++i)
+		if (root_mask[i]) roots[root_count++] = i;
+	//Initialize root nodes
+	for (unsigned i = 0; i < root_count; ++i) {
+		struct Node* const node = scene->nodes + roots[i];
+		if (!node->valid_transform)
+			glm_mat4_identity(node->transformation);
+	}
+	//Traverse scene hierarchy
 	unsigned* const queue = malloc(scene->node_count * sizeof(unsigned));
-	unsigned start = 0, count = 1;
-	queue[0] = 0;
-	while (count) {
-		unsigned k = queue[start++];
-		--count;
-		struct Node node = scene->nodes[k];
-		if (node.valid_transform) {
-			//Enqueue children
-			for (unsigned i = 0; i < node.child_count; ++i)
-				queue[++start] = node.children[i];
-			count += node.child_count;
-		} else {
+	unsigned queue_start = 0, queue_count = root_count;
+	memcpy(queue, roots, root_count * sizeof(unsigned));
+	free(roots);
+	while (queue_count--) {
+		struct Node* const node = scene->nodes + queue[queue_start++];
+		if (!node->valid_transform) {
 			//Compute transformation
-			mat4 transformation = GLM_MAT4_IDENTITY;
-			glm_translate(transformation, node.translation);
-			glm_quat_rotate(transformation, node.rotation, transformation);
-			glm_scale(transformation, node.scaling);
-			glm_mat4_mul(node.transformation, transformation, node.transformation);
-			//Enqueue children
-			for (unsigned i = 0; i < node.child_count; ++i) {
-				scene->nodes[i].valid_transform = false;
-				glm_mat4_copy(transformation, scene->nodes[i].transformation);
-				queue[++start] = node.children[i];
-			}
-			count += node.child_count;
+			mat4 transformation = GLM_MAT4_IDENTITY_INIT;
+			glm_translate(transformation, node->translation);
+			glm_quat_rotate(transformation, node->rotation, transformation);
+			glm_scale(transformation, node->scaling);
+			glm_mat4_mul(node->transformation, transformation, node->transformation);
 		}
+		//Enqueue children
+		for (unsigned i = 0; i < node->child_count; ++i) {
+			struct Node* const child = scene->nodes + node->children[i];
+			if (!child->valid_transform)
+				glm_mat4_copy(node->transformation, child->transformation);
+			queue[queue_start++] = node->children[i];
+		}
+		queue_count += node->child_count;
 	}
 	free(queue);
 }
-*/
 
 static void destroy_primitive(struct Primitive* primitive) {
 	free(primitive->vertices);

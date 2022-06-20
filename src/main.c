@@ -53,6 +53,7 @@ int main() {
 	renderer_update_camera(&renderer, camera);
 
 	//Scene
+	/*
 	unsigned indices[] = {0, 1, 2};
 	struct Vertex vertices[] = {
 		{{0, 0, 0}, {0, 0, 0}},
@@ -80,6 +81,9 @@ int main() {
 		1, &mesh,
 		1, &node
 	};
+	*/
+	struct Scene scene;
+	load_scene("BarramundiFish.glb", &scene);
 	renderer_load_scene(&renderer, scene);
 
 	//Main loop

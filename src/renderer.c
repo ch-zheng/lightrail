@@ -89,12 +89,13 @@ static VkResult create_pipeline(struct Renderer* const r) {
 		1, &scissor
 	};
 	//Rasterizer
+	//FIXME: Debug-mode settings
 	const VkPipelineRasterizationStateCreateInfo rasterization = {
 		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, NULL, 0,
 		false,
 		false,
-		VK_POLYGON_MODE_FILL,
-		0, //VK_CULL_MODE_BACK_BIT, //FIXME: Temporarily disable backface culling
+		VK_POLYGON_MODE_LINE, //VK_POLYGON_MODE_FILL,
+		0, //VK_CULL_MODE_BACK_BIT,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		false,
 		0, 0, 0,
@@ -163,7 +164,7 @@ static VkResult create_pipeline(struct Renderer* const r) {
 		0
 	};
 	const VkResult result = vkCreateGraphicsPipelines(
-		r->device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &r->pipeline
+		r->device, r->pipeline_cache, 1, &pipeline_info, NULL, &r->pipeline
 	);
 
 	//Cleanup
@@ -237,7 +238,7 @@ static bool create_swapchain(struct Renderer* const r, bool old) {
 		queue_family_indices,
 		surface_capabilities.currentTransform,
 		VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-		VK_PRESENT_MODE_IMMEDIATE_KHR, //TODO: Present mode config
+		VK_PRESENT_MODE_IMMEDIATE_KHR,
 		false,
 		old ? r->swapchain : NULL
 	};
@@ -485,6 +486,17 @@ static void record_commands(struct Renderer* const r, unsigned image_index) {
 	vkEndCommandBuffer(r->command_buffer);
 }
 
+static void save_pipeline_cache(struct Renderer* const r) {
+	FILE* const pipeline_cache_file = fopen(PIPELINE_CACHE_FILENAME, "wb");
+	size_t data_size;
+	vkGetPipelineCacheData(r->device, r->pipeline_cache, &data_size, NULL);
+	void* const data = malloc(data_size);
+	vkGetPipelineCacheData(r->device, r->pipeline_cache, &data_size, data);
+	fwrite(data, data_size, 1, pipeline_cache_file);
+	free(data);
+	fclose(pipeline_cache_file);
+}
+
 bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	struct Renderer r;
 	r.window = window;
@@ -494,7 +506,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 		VK_STRUCTURE_TYPE_APPLICATION_INFO, NULL,
 		"Lightrail", 1,
 		"Lightrail", 1,
-		VK_API_VERSION_1_2
+		VK_API_VERSION_1_3
 	};
 	//Layers
 	const char* layer_names[] = {"VK_LAYER_KHRONOS_validation"};
@@ -646,7 +658,8 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	}
 	//Logical device
 	const VkPhysicalDeviceFeatures features = {
-		.multiDrawIndirect = true
+		.multiDrawIndirect = true,
+		.fillModeNonSolid = true //FIXME: Debug
 	};
 	const VkDeviceCreateInfo device_info = {
 		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, NULL, 0,
@@ -726,9 +739,30 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 
 	//TODO: Multisampling
 	//TODO: Pipeline cache
+	FILE* const pipeline_cache_file = fopen(PIPELINE_CACHE_FILENAME, "rb");
+	if (pipeline_cache_file) {
+		fseek(pipeline_cache_file, 0, SEEK_END);
+		const long data_size = ftell(pipeline_cache_file);
+		void* const data = malloc(data_size);
+		const VkPipelineCacheCreateInfo pipeline_cache_create_info = {
+			VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, NULL, 0,
+			data_size,
+			data
+		};
+		vkCreatePipelineCache(r.device, &pipeline_cache_create_info, NULL, &r.pipeline_cache);
+		free(data);
+		fclose(pipeline_cache_file);
+	} else {
+		const VkPipelineCacheCreateInfo pipeline_cache_create_info = {
+			VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, NULL, 0,
+			0,
+			0
+		};
+		vkCreatePipelineCache(r.device, &pipeline_cache_create_info, NULL, &r.pipeline_cache);
+	}
 
 	create_swapchain(&r, false);
-	renderer_create_resolution(&r, 256, 256); //TODO: Resolution setting
+	renderer_create_resolution(&r, 1024, 1024); //TODO: Resolution setting
 
 	//Uniform buffer
 	const VkBufferCreateInfo uniform_buffer_info = {
@@ -752,6 +786,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 }
 
 void destroy_renderer(struct Renderer r) {
+	save_pipeline_cache(&r);
 	//Scene data
 	for (unsigned i = 0; i < SCENE_BUFFER_COUNT; ++i)
 		vkDestroyBuffer(r.device, r.scene_buffers[i], NULL);
@@ -760,6 +795,7 @@ void destroy_renderer(struct Renderer r) {
 	vkDestroyBuffer(r.device, r.uniform_buffer, NULL);
 	free_allocation(r.device, r.uniform_alloc);
 	//Vulkan objects
+	vkDestroyPipelineCache(r.device, r.pipeline_cache, NULL);
 	renderer_destroy_resolution(&r);
 	vkDestroySwapchainKHR(r.device, r.swapchain, NULL);
 	free(r.swapchain_images);
