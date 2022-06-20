@@ -1,162 +1,166 @@
+#define CGLTF_IMPLEMENTATION
 #include "scene.h"
-#include "stdio.h"
-#include "stdlib.h"
-#include "string.h"
+#include "cgltf.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-enum ObjVertexFormat {P, PT, PN, PTN};
-
-bool load_obj(const char* const filename, struct Mesh* mesh) {
-	//File objects
-	FILE* file;
-	file = fopen(filename, "r");
-	char* line;
-	size_t buffer_size = 0;
-
-	//Counting
-	unsigned v_count = 0, vt_count = 0, vn_count = 0;
-	mesh->vertex_count = 0;
-	mesh->index_count = 0;
-	while (getline(&line, &buffer_size, file) >= 0) {
-		if (!strncmp(line, "v ", 2)) ++v_count;
-		else if (!strncmp(line, "vt", 2)) ++vt_count;
-		else if (!strncmp(line, "vn", 2)) ++vn_count;
-		else if (line[0] == 'f') {
-			unsigned vertex_count = 0;
-			char* token = strtok(line, " \t\n");
-			while (token) {
-				if (token[0] != 'f') ++vertex_count;
-				token = strtok(NULL, " \t\n");
-			}
-			//if (vertex_count < 3) continue;
-			mesh->vertex_count += vertex_count;
-			mesh->index_count += 3 * (vertex_count - 2);
-		}
-	}
-	//Allocate arrays
-	float* const v = malloc(3 * v_count * sizeof(float)),
-		* const vt = malloc(3 * vt_count * sizeof(float)),
-		* const vn = malloc(3 * vn_count * sizeof(float));
-	mesh->vertices = malloc(mesh->vertex_count * sizeof(struct Vertex));
-	mesh->indices = malloc(mesh->index_count * sizeof(unsigned));
-	//Size indices
-	unsigned i_v = 0, i_vt = 0, i_vn = 0, i_vertices = 0, i_indices = 0;
-
-	//Parsing
-	rewind(file);
-	while (getline(&line, &buffer_size, file) >= 0) {
-		if (!strncmp(line, "v ", 2)) {
-			float* const offset = v + i_v;
-			sscanf(line, "v %f %f %f", offset, offset + 1, offset + 2);
-			i_v += 3;
-		} else if (!strncmp(line, "vt", 2)) {
-			float* const offset = v + i_vt;
-			sscanf(line, "vt %f %f %f", offset, offset + 1, offset + 2);
-			i_vt += 3;
-		} else if (!strncmp(line, "vn", 2)) {
-			float* const offset = v + i_vn;
-			sscanf(line, "vn %f %f %f", offset, offset + 1, offset + 2);
-			i_vn += 3;
-		} else if (line[0] == 'f') {
-			bool format_known;
-			enum ObjVertexFormat vertex_format;
-			unsigned face_vertices = 0, base_vertex = i_vertices + 1;
-			char *token = strtok(line, " \t\n");
-			//Parse vertices
-			while (token) {
-				if (token[0] == 'f') {
-					token = strtok(NULL, " \t\n");
-					continue;
-				}
-				//Determine vertex format
-				if (!format_known) {
-					unsigned slash_count = 0;
-					char* c = token;
-					while (*c) {
-						if (*c == '/') ++slash_count;
-						++c;
-					}
-					switch (slash_count) {
-						case 0:
-							vertex_format = P;
+bool load_scene(const char* const filename, struct Scene* output) {
+	cgltf_options options = {};
+	cgltf_data* data;
+	cgltf_result result = cgltf_parse_file(&options, filename, &data);
+	if (result == cgltf_result_success) {
+		result = cgltf_load_buffers(&options, data, filename); //TODO: Error handling
+		const struct Scene scene = {
+			data->meshes_count,
+			malloc(data->meshes_count * sizeof(struct Mesh)),
+			data->nodes_count,
+			malloc(data->nodes_count * sizeof(struct Node))
+		};
+		//Load meshes
+		for (unsigned i = 0; i < data->meshes_count; ++i) {
+			const cgltf_mesh gltf_mesh = data->meshes[i];
+			const struct Mesh mesh = {
+				gltf_mesh.primitives_count,
+				malloc(gltf_mesh.primitives_count * sizeof(struct Primitive))
+			};
+			//Load primitives
+			for (unsigned i = 0; i < gltf_mesh.primitives_count; ++i) {
+				const cgltf_primitive gltf_primitive = gltf_mesh.primitives[i];
+				struct Primitive primitive = {0, NULL, 0, NULL};
+				//Load indices
+				const cgltf_accessor indices = *gltf_primitive.indices;
+				primitive.index_count = indices.count;
+				primitive.indices = malloc(indices.count * sizeof(unsigned));
+				for (unsigned i = 0; i < indices.count; ++i)
+					primitive.indices[i] = cgltf_accessor_read_index(&indices, i);
+				//Load vertices
+				const unsigned vertex_count = gltf_primitive.attributes[0].data->count;
+				primitive.vertex_count = vertex_count;
+				primitive.vertices = calloc(vertex_count, sizeof(struct Primitive));
+				//Load vertex attributes
+				for (unsigned i = 0; i < gltf_primitive.attributes_count; ++i) {
+					const cgltf_attribute attribute = gltf_primitive.attributes[i];
+					const unsigned float_count = cgltf_accessor_unpack_floats(attribute.data, NULL, 0);
+					float* const buffer = malloc(float_count * sizeof(float));
+					cgltf_accessor_unpack_floats(attribute.data, buffer, float_count);
+					const unsigned element_size = cgltf_num_components(attribute.data->type);
+					switch (attribute.type) {
+						case cgltf_attribute_type_position:
+							{
+								const unsigned components = element_size < 3 ? element_size : 3;
+								for (unsigned i = 0; i < vertex_count; ++i) {
+									const unsigned offset = i * element_size;
+									for (unsigned j = 0; j < components; ++j)
+										primitive.vertices[i].pos[j] = buffer[offset + j];
+								}
+							}
 							break;
-						case 1:
-							vertex_format = PT;
+						case cgltf_attribute_type_normal:
+							{
+								const unsigned components = element_size < 3 ? element_size : 3;
+								for (unsigned i = 0; i < vertex_count; ++i) {
+									const unsigned offset = i * element_size;
+									for (unsigned j = 0; j < components; ++j)
+										primitive.vertices[i].normal[j] = buffer[offset + j];
+								}
+							}
 							break;
-						case 2:
-							vertex_format = PN;
-							break;
-						case 3:
-							vertex_format = PTN;
+						default:
 							break;
 					}
-					format_known = true;
+					free(buffer);
 				}
-				//Parse vertex
-				struct Vertex* const vertex = mesh->vertices + i_vertices++;
-				unsigned j_v, j_vt, j_vn;
-				switch (vertex_format) {
-					case P:
-						sscanf(token, "%d", &j_v);
-						--j_v;
-						*vertex = (struct Vertex) {
-							{v[3 * j_v], v[3 * j_v + 1], v[3 * j_v + 2]}
-						};
-						break;
-					case PT:
-						sscanf(token, "%d/%d", &j_v, &j_vt);
-						--j_v;
-						--j_vt;
-						*vertex = (struct Vertex) {
-							{v[3 * j_v], v[3 * j_v + 1], v[3 * j_v + 2]},
-							{v[3 * j_vt], v[3 * j_vt + 1], v[3 * j_vt + 2]}
-						};
-						break;
-					case PN:
-						sscanf(token, "%d//%d", &j_v, &j_vn);
-						--j_vt;
-						--j_vn;
-						*vertex = (struct Vertex) {
-							.pos = {v[3 * j_v], v[3 * j_v + 1], v[3 * j_v + 2]},
-							.normal = {v[3 * j_vn], v[3 * j_vn + 1], v[3 * j_vn + 2]}
-						};
-						break;
-					case PTN:
-						sscanf(token, "%d/%d/%d", &j_v, &j_vt, &j_vn);
-						--j_v;
-						--j_vt;
-						--j_vn;
-						*vertex = (struct Vertex) {
-							{v[3 * j_v], v[3 * j_v + 1], v[3 * j_v + 2]},
-							{v[3 * j_vt], v[3 * j_vt + 1], v[3 * j_vt + 2]},
-							{v[3 * j_vn], v[3 * j_vn + 1], v[3 * j_vn + 2]}
-						};
-						break;
-				}
-				++face_vertices;
-				token = strtok(NULL, " \t\n");
+				mesh.primitives[i] = primitive;
 			}
-			for (unsigned i = 0; i < face_vertices - 2; ++i) {
-				mesh->indices[i_indices++] = base_vertex;
-				mesh->indices[i_indices++] = base_vertex + i + 1;
-				mesh->indices[i_indices++] = base_vertex + i + 2;
+			scene.meshes[i] = mesh;
+		}
+		//Load nodes
+		for (unsigned i = 0; i < data->nodes_count; ++i) {
+			const cgltf_node gltf_node = data->nodes[i];
+			struct Node node = {
+				gltf_node.children_count,
+				malloc(gltf_node.children_count * sizeof(unsigned)),
+				gltf_node.mesh,
+				gltf_node.mesh ? gltf_node.mesh - data->meshes : 0,
+				{gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2]},
+				{gltf_node.rotation[0], gltf_node.rotation[1], gltf_node.rotation[2], gltf_node.rotation[3]},
+				{gltf_node.scale[0], gltf_node.scale[1], gltf_node.scale[2]},
+				true
+			};
+			//Child nodes
+			for (unsigned i = 0; i < node.child_count; ++i)
+				node.children[i] = gltf_node.children[i] - data->nodes;
+			//World transformation
+			cgltf_node_transform_world(data->nodes + i, (cgltf_float*) node.transformation);
+			scene.nodes[i] = node;
+		}
+		//Finish
+		cgltf_free(data);
+		*output = scene;
+		return false;
+	} else return true;
+}
+
+/*
+void scene_update_transformations(struct Scene* scene) {
+	//Initialize root node
+	struct Node root = scene->nodes[0];
+	if (!root.valid_transform)
+		glm_mat4_identity(root.transformation);
+	//Traverse node tree
+	unsigned* const queue = malloc(scene->node_count * sizeof(unsigned));
+	unsigned start = 0, count = 1;
+	queue[0] = 0;
+	while (count) {
+		unsigned k = queue[start++];
+		--count;
+		struct Node node = scene->nodes[k];
+		if (node.valid_transform) {
+			//Enqueue children
+			for (unsigned i = 0; i < node.child_count; ++i)
+				queue[++start] = node.children[i];
+			count += node.child_count;
+		} else {
+			//Compute transformation
+			mat4 transformation = GLM_MAT4_IDENTITY;
+			glm_translate(transformation, node.translation);
+			glm_quat_rotate(transformation, node.rotation, transformation);
+			glm_scale(transformation, node.scaling);
+			glm_mat4_mul(node.transformation, transformation, node.transformation);
+			//Enqueue children
+			for (unsigned i = 0; i < node.child_count; ++i) {
+				scene->nodes[i].valid_transform = false;
+				glm_mat4_copy(transformation, scene->nodes[i].transformation);
+				queue[++start] = node.children[i];
 			}
+			count += node.child_count;
 		}
 	}
+	free(queue);
+}
+*/
 
-	//Cleanup
-	free(v);
-	free(vt);
-	free(vn);
-	fclose(file);
-	free(line);
-	return false;
+static void destroy_primitive(struct Primitive* primitive) {
+	free(primitive->vertices);
+	free(primitive->indices);
 }
 
-void destroy_mesh(struct Mesh* mesh) {
-	if (mesh->vertex_count) free(mesh->vertices);
-	if (mesh->index_count) free(mesh->indices);
+static void destroy_mesh(struct Mesh* mesh) {
+	for (unsigned i = 0; i < mesh->primitive_count; ++i)
+		destroy_primitive(mesh->primitives + i);
+	free(mesh->primitives);
 }
 
-void destroy_scene(struct Scene* scene) {
-	if (scene->mesh_count) free(scene->meshes);
+static void destroy_node(struct Node* node) {
+	free(node->children);
+}
+
+void destroy_scene(struct Scene scene) {
+	for (unsigned i = 0; i < scene.mesh_count; ++i)
+		destroy_mesh(scene.meshes+ i);
+	free(scene.meshes);
+	for (unsigned i = 0; i < scene.node_count; ++i)
+		destroy_node(scene.nodes + i);
+	free(scene.nodes);
 }

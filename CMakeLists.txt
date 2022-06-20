@@ -39,13 +39,4 @@ target_sources(
 )
 add_dependencies(lightrail shaders)
 target_link_libraries(lightrail SDL2 vulkan cglm m)
-
-# Testing
-add_executable(test)
-target_include_directories(test PUBLIC ./include)
-target_sources(
-	test PUBLIC
-	src/test.c
-	src/scene.c
-)
-set_property(TARGET test PROPERTY C_STANDARD 17)
+target_precompile_headers(lightrail PRIVATE [["cgltf.h"]])

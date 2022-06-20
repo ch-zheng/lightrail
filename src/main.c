@@ -49,6 +49,38 @@ int main() {
 	//Renderer
 	struct Renderer renderer;
 	create_renderer(window, &renderer);
+	struct Camera camera = create_camera();
+	renderer_update_camera(&renderer, camera);
+
+	//Scene
+	unsigned indices[] = {0, 1, 2};
+	struct Vertex vertices[] = {
+		{{0, 0, 0}, {0, 0, 0}},
+		{{0.5, 0, 0}, {0, 0, 0}},
+		{{0, 0, 0.5}, {0, 0, 0}}
+	};
+	struct Primitive primitive = {3, vertices, 3, indices};
+	struct Mesh mesh = {1, &primitive};
+	struct Node node = {
+		0, NULL,
+		true,
+		0,
+		{0, 0, 0},
+		{0, 0, 0},
+		{0, 0, 0},
+		true,
+		{
+			{1, 0, 0, 0},
+			{0, 1, 0, 0},
+			{0, 0, 1, 0},
+			{0, 0, 0, 1}
+		}
+	};
+	struct Scene scene = {
+		1, &mesh,
+		1, &node
+	};
+	renderer_load_scene(&renderer, scene);
 
 	//Main loop
 	bool running = true;
@@ -161,40 +193,42 @@ int main() {
 		//Input handling
 		//Movement
 		vec3 movement = {0, 0, 0}, side;
-		glm_vec3_cross(renderer.camera.direction, renderer.camera.up, side);
+		glm_vec3_cross(camera.direction, camera.up, side);
 		if (inputs.move_forward)
-			glm_vec3_add(movement, renderer.camera.direction, movement);
+			glm_vec3_add(movement, camera.direction, movement);
 		if (inputs.move_backward)
-			glm_vec3_sub(movement, renderer.camera.direction, movement);
+			glm_vec3_sub(movement, camera.direction, movement);
 		if (inputs.move_left)
 			glm_vec3_sub(movement, side, movement);
 		if (inputs.move_right)
 			glm_vec3_add(movement, side, movement);
 		if (inputs.move_up)
-			glm_vec3_add(movement, renderer.camera.up, movement);
+			glm_vec3_add(movement, camera.up, movement);
 		if (inputs.move_down)
-			glm_vec3_sub(movement, renderer.camera.up, movement);
+			glm_vec3_sub(movement, camera.up, movement);
 		glm_vec3_normalize(movement);
 		glm_vec3_scale(movement, 2*delta, movement);
-		glm_vec3_add(movement, renderer.camera.position, renderer.camera.position);
+		glm_vec3_add(movement, camera.position, camera.position);
 		//Rotation
 		const float angular_velocity = 2; //Radians per second
 		if (inputs.rotate_up)
-			glm_vec3_rotate(renderer.camera.direction, angular_velocity * delta, side);
+			glm_vec3_rotate(camera.direction, angular_velocity * delta, side);
 		if (inputs.rotate_down)
-			glm_vec3_rotate(renderer.camera.direction, -angular_velocity * delta, side);
+			glm_vec3_rotate(camera.direction, -angular_velocity * delta, side);
 		if (inputs.rotate_left)
-			glm_vec3_rotate(renderer.camera.direction, angular_velocity * delta, renderer.camera.up);
+			glm_vec3_rotate(camera.direction, angular_velocity * delta, camera.up);
 		if (inputs.rotate_right)
-			glm_vec3_rotate(renderer.camera.direction, -angular_velocity * delta, renderer.camera.up);
+			glm_vec3_rotate(camera.direction, -angular_velocity * delta, camera.up);
 
 		//Rendering
 		if (shown && !minimized) {
+			renderer_update_camera(&renderer, camera);
 			renderer_draw(&renderer);
 		} else {
 			sleep(1);
 		}
 	}
 
-	destroy_renderer(&renderer);
+	destroy_renderer(renderer);
+	//destroy_scene(scene);
 }

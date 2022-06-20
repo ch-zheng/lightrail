@@ -9,6 +9,18 @@
 
 #define DEG_TO_RAD (3.14159 / 180)
 
+struct Camera create_camera() {
+	//TODO: Better default parameters
+	struct Camera camera = {
+		{0, -2, 0},
+		{0, 1, 0},
+		{0, 0, 1},
+		90, 1, 1, 64,
+		PERSPECTIVE
+	};
+	return camera;
+};
+
 void camera_transform(struct Camera camera, mat4 result) {
 	//View matrix
 	mat4 view;
