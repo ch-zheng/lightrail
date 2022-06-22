@@ -6,6 +6,17 @@
 
 #define REQUIRED_EXT_COUNT 2
 
+struct LocalMesh {
+	unsigned vertex_offset;
+	unsigned vertex_count;
+	unsigned index_offset;
+	unsigned index_count;
+};
+
+struct LocalNode {
+	mat4 transformation;
+};
+
 static VkShaderModule create_shader_module(
 	const struct Renderer* const r,
 	const char* filename) {
@@ -270,10 +281,17 @@ static bool create_swapchain(struct Renderer* const r, bool old) {
 	return false;
 }
 
-/*! \brief Write data to buffers using an intermediate staging buffer.
- *
- * This function is generally used to write to buffers in device-local memory.
-*/
+static void save_pipeline_cache(struct Renderer* const r) {
+	FILE* const pipeline_cache_file = fopen(PIPELINE_CACHE_FILENAME, "wb");
+	size_t data_size;
+	vkGetPipelineCacheData(r->device, r->pipeline_cache, &data_size, NULL);
+	void* const data = malloc(data_size);
+	vkGetPipelineCacheData(r->device, r->pipeline_cache, &data_size, data);
+	fwrite(data, data_size, 1, pipeline_cache_file);
+	free(data);
+	fclose(pipeline_cache_file);
+}
+
 static void staged_buffer_write(
 	//Vulkan objects
 	VkPhysicalDevice* const physical_device,
@@ -316,7 +334,7 @@ static void staged_buffer_write(
 		memcpy(buffer_data, data[i], sizes[i]);
 		vkUnmapMemory(*device, staging_alloc.memory);
 	}
-	//Execute transfer
+	//Record commands for transfer
 	const VkCommandBufferBeginInfo begin_info = {
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
 		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
@@ -327,6 +345,7 @@ static void staged_buffer_write(
 		vkCmdCopyBuffer(*command_buffer, staging_buffer, dst_buffers[i], 1, &region);
 	}
 	vkEndCommandBuffer(*command_buffer);
+	//Submit to queue
 	const VkSubmitInfo submit_info = {
 		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
 		0, NULL,
@@ -334,32 +353,90 @@ static void staged_buffer_write(
 		1, command_buffer,
 		0, NULL
 	};
-	VkFence fence;
-	VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, NULL, 0};
-	vkCreateFence(*device, &fence_info, NULL, &fence);
-	vkQueueSubmit(*queue, 1, &submit_info, fence);
-	vkWaitForFences(*device, 1, &fence, false, 1000000000); //FIXME: Reasonable timeout
-	//TODO: Improved synchronization
-	//Cleanup
+	vkQueueSubmit(*queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(*queue); //TODO: Better synchronization
 	free(offsets);
-	vkDestroyFence(*device, fence, NULL);
 	vkDestroyBuffer(*device, staging_buffer, NULL);
 	free_allocation(*device, staging_alloc);
 }
 
-static void record_commands(struct Renderer* const r, unsigned image_index) {
+static void record_draw_commands(
+	struct Renderer* const r,
+	VkCommandBuffer command_buffer,
+	unsigned draw_count) {
 	const VkCommandBufferBeginInfo begin_info = {
-		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
-		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL, 0
 	};
-	vkBeginCommandBuffer(r->command_buffer, &begin_info);
+	vkBeginCommandBuffer(command_buffer, &begin_info);
+
+	//Copy staging buffer to render buffers
+	//Staging buffer memory barrier
+	const VkBufferMemoryBarrier2 staging_buffer_barrier = {
+		VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, NULL,
+		VK_PIPELINE_STAGE_2_HOST_BIT,
+		VK_ACCESS_2_HOST_WRITE_BIT,
+		VK_PIPELINE_STAGE_2_COPY_BIT,
+		VK_ACCESS_2_TRANSFER_READ_BIT,
+		r->graphics_queue_family,
+		r->graphics_queue_family,
+		r->staging_buffer,
+		0, VK_WHOLE_SIZE
+	};
+	const VkDependencyInfo staging_buffer_dependency_info = {
+		VK_STRUCTURE_TYPE_DEPENDENCY_INFO, NULL, 0,
+		0, NULL,
+		1, &staging_buffer_barrier,
+		0, NULL
+	};
+	vkCmdPipelineBarrier2(command_buffer, &staging_buffer_dependency_info);
+	//Camera
+	const VkBufferCopy camera_region = {0, 0, sizeof(mat4)};
+	vkCmdCopyBuffer(command_buffer, r->staging_buffer, r->uniform_buffer, 1, &camera_region);
+	//Node transformations
+	const VkBufferCopy nodes_region = {sizeof(mat4), 0, draw_count * sizeof(mat4)};
+	vkCmdCopyBuffer(command_buffer, r->staging_buffer, r->storage_buffers[3], 1, &nodes_region);
+	//Memory barrier
+	const VkBufferMemoryBarrier2 shader_buffer_barriers[] = {
+		//Uniform buffer
+		{
+			VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, NULL,
+			VK_PIPELINE_STAGE_2_COPY_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+			VK_ACCESS_2_UNIFORM_READ_BIT,
+			r->graphics_queue_family,
+			r->graphics_queue_family,
+			r->uniform_buffer,
+			0, VK_WHOLE_SIZE
+		},
+		//Node storage buffer
+		{
+			VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, NULL,
+			VK_PIPELINE_STAGE_2_COPY_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+			VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+			r->graphics_queue_family,
+			r->graphics_queue_family,
+			r->storage_buffers[3],
+			0, VK_WHOLE_SIZE
+		}
+	};
+	const VkDependencyInfo shader_buffer_dependency_info = {
+		VK_STRUCTURE_TYPE_DEPENDENCY_INFO, NULL, 0,
+		0, NULL,
+		2, shader_buffer_barriers,
+		0, NULL
+	};
+	vkCmdPipelineBarrier2(command_buffer, &shader_buffer_dependency_info);
+
 	//Render pass
 	const VkClearValue clear_values[3] = {
 		{0, 0, 0, 1}, //Color
 		{0, 0, 0, 1}, //Resolve
 		{1, 0} //Depth
 	};
-	VkRenderPassBeginInfo render_pass_begin_info = {
+	const VkRenderPassBeginInfo render_pass_begin_info = {
 		VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, NULL,
 		r->render_pass,
 		r->framebuffer,
@@ -367,14 +444,14 @@ static void record_commands(struct Renderer* const r, unsigned image_index) {
 		3, clear_values
 	};
 	vkCmdBeginRenderPass(
-		r->command_buffer,
+		command_buffer,
 		&render_pass_begin_info,
 		VK_SUBPASS_CONTENTS_INLINE
 	);
-	vkCmdBindPipeline(r->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipeline);
+	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipeline);
 	//Bind descriptors
 	vkCmdBindDescriptorSets(
-		r->command_buffer,
+		command_buffer,
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
 		r->pipeline_layout,
 		0,
@@ -384,25 +461,37 @@ static void record_commands(struct Renderer* const r, unsigned image_index) {
 	//Vertex buffers
 	const VkDeviceSize offsets[] = {0};
 	vkCmdBindVertexBuffers(
-		r->command_buffer,
+		command_buffer,
 		0,
-		1, &r->scene_buffers[0], offsets
+		1, &r->storage_buffers[0], offsets
 	);
 	vkCmdBindIndexBuffer(
-		r->command_buffer,
-		r->scene_buffers[1],
+		command_buffer,
+		r->storage_buffers[1],
 		0,
 		VK_INDEX_TYPE_UINT32
 	);
 	//Drawing
 	vkCmdDrawIndexedIndirect(
-		r->command_buffer,
-		r->scene_buffers[4],
+		command_buffer,
+		r->storage_buffers[4],
 		0,
-		r->draw_count,
+		draw_count,
 		sizeof(VkDrawIndexedIndirectCommand)
 	);
-	vkCmdEndRenderPass(r->command_buffer);
+	vkCmdEndRenderPass(command_buffer);
+	vkEndCommandBuffer(command_buffer);
+}
+
+static void record_blit_commands(
+	struct Renderer* const r,
+	VkCommandBuffer command_buffer,
+	unsigned image_index) {
+	const VkCommandBufferBeginInfo begin_info = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
+		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	vkBeginCommandBuffer(command_buffer, &begin_info);
 	//Blit render target to swapchain image
 	const VkImageSubresourceRange color_subresource_range = {
 		VK_IMAGE_ASPECT_COLOR_BIT,
@@ -436,7 +525,7 @@ static void record_commands(struct Renderer* const r, unsigned image_index) {
 		},
 	};
 	vkCmdPipelineBarrier(
-		r->command_buffer,
+		command_buffer,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0,
@@ -455,7 +544,7 @@ static void record_commands(struct Renderer* const r, unsigned image_index) {
 		{{0, 0, 0}, {r->surface_extent.width, r->surface_extent.height, 1}}
 	};
 	vkCmdBlitImage(
-		r->command_buffer,
+		command_buffer,
 		r->images[1],
 		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		r->swapchain_images[image_index],
@@ -475,7 +564,7 @@ static void record_commands(struct Renderer* const r, unsigned image_index) {
 		color_subresource_range
 	};
 	vkCmdPipelineBarrier(
-		r->command_buffer,
+		command_buffer,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		VK_PIPELINE_STAGE_HOST_BIT,
 		0,
@@ -483,18 +572,7 @@ static void record_commands(struct Renderer* const r, unsigned image_index) {
 		0, NULL,
 		1, &present_barrier
 	);
-	vkEndCommandBuffer(r->command_buffer);
-}
-
-static void save_pipeline_cache(struct Renderer* const r) {
-	FILE* const pipeline_cache_file = fopen(PIPELINE_CACHE_FILENAME, "wb");
-	size_t data_size;
-	vkGetPipelineCacheData(r->device, r->pipeline_cache, &data_size, NULL);
-	void* const data = malloc(data_size);
-	vkGetPipelineCacheData(r->device, r->pipeline_cache, &data_size, data);
-	fwrite(data, data_size, 1, pipeline_cache_file);
-	free(data);
-	fclose(pipeline_cache_file);
+	vkEndCommandBuffer(command_buffer);
 }
 
 bool create_renderer(SDL_Window* window, struct Renderer* const result) {
@@ -661,8 +739,14 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 		.multiDrawIndirect = true,
 		.fillModeNonSolid = true //FIXME: Debug
 	};
+	const VkPhysicalDeviceVulkan13Features features_13 = {
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, NULL,
+		.synchronization2 = true
+	};
 	const VkDeviceCreateInfo device_info = {
-		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, NULL, 0,
+		VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+		&features_13,
+		0,
 		queue_info_count, queue_infos,
 		0, NULL, //Layers
 		REQUIRED_EXT_COUNT, required_extensions, //Extensions
@@ -672,6 +756,29 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	//Queue handles
 	vkGetDeviceQueue(r.device, r.graphics_queue_family, 0, &r.graphics_queue);
 	vkGetDeviceQueue(r.device, r.present_queue_family, 0, &r.present_queue);
+
+	//Pipeline cache
+	FILE* const pipeline_cache_file = fopen(PIPELINE_CACHE_FILENAME, "rb");
+	if (pipeline_cache_file) {
+		fseek(pipeline_cache_file, 0, SEEK_END);
+		const long data_size = ftell(pipeline_cache_file);
+		void* const data = malloc(data_size);
+		const VkPipelineCacheCreateInfo pipeline_cache_create_info = {
+			VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, NULL, 0,
+			data_size,
+			data
+		};
+		vkCreatePipelineCache(r.device, &pipeline_cache_create_info, NULL, &r.pipeline_cache);
+		free(data);
+		fclose(pipeline_cache_file);
+	} else {
+		const VkPipelineCacheCreateInfo pipeline_cache_create_info = {
+			VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, NULL, 0,
+			0,
+			0
+		};
+		vkCreatePipelineCache(r.device, &pipeline_cache_create_info, NULL, &r.pipeline_cache);
+	}
 	
 	//Command pool
 	const VkCommandPoolCreateInfo pool_info = {
@@ -686,9 +793,9 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, NULL,
 		r.command_pool,
 		VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-		1
+		COMMAND_BUFFER_COUNT
 	};
-	vkAllocateCommandBuffers(r.device, &command_buffer_alloc_info, &r.command_buffer);
+	vkAllocateCommandBuffers(r.device, &command_buffer_alloc_info, r.command_buffers);
 
 	//Semaphores
 	const VkSemaphoreCreateInfo semaphore_info = {
@@ -737,33 +844,6 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	};
 	vkAllocateDescriptorSets(r.device, &descriptor_set_alloc_info, &r.descriptor_set);
 
-	//TODO: Multisampling
-	//TODO: Pipeline cache
-	FILE* const pipeline_cache_file = fopen(PIPELINE_CACHE_FILENAME, "rb");
-	if (pipeline_cache_file) {
-		fseek(pipeline_cache_file, 0, SEEK_END);
-		const long data_size = ftell(pipeline_cache_file);
-		void* const data = malloc(data_size);
-		const VkPipelineCacheCreateInfo pipeline_cache_create_info = {
-			VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, NULL, 0,
-			data_size,
-			data
-		};
-		vkCreatePipelineCache(r.device, &pipeline_cache_create_info, NULL, &r.pipeline_cache);
-		free(data);
-		fclose(pipeline_cache_file);
-	} else {
-		const VkPipelineCacheCreateInfo pipeline_cache_create_info = {
-			VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, NULL, 0,
-			0,
-			0
-		};
-		vkCreatePipelineCache(r.device, &pipeline_cache_create_info, NULL, &r.pipeline_cache);
-	}
-
-	create_swapchain(&r, false);
-	renderer_create_resolution(&r, 1024, 1024); //TODO: Resolution setting
-
 	//Uniform buffer
 	const VkBufferCreateInfo uniform_buffer_info = {
 		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
@@ -781,16 +861,32 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 		&r.uniform_alloc
 	);
 
+	//Update uniform descriptor
+	const VkDescriptorBufferInfo buffer_info = {r.uniform_buffer, 0, VK_WHOLE_SIZE};
+	const VkWriteDescriptorSet descriptor_write = {
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL,
+		r.descriptor_set,
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		NULL,
+		&buffer_info,
+		NULL
+	};
+	vkUpdateDescriptorSets(r.device, 1, &descriptor_write, 0, NULL);
+
+	//TODO: Multisampling
+	create_swapchain(&r, false);
+	renderer_create_resolution(&r, 1024, 1024); //TODO: Resolution setting
+
 	*result = r;
 	return false;
 }
 
 void destroy_renderer(struct Renderer r) {
 	save_pipeline_cache(&r);
-	//Scene data
-	for (unsigned i = 0; i < SCENE_BUFFER_COUNT; ++i)
-		vkDestroyBuffer(r.device, r.scene_buffers[i], NULL);
-	free_allocation(r.device, r.scene_alloc);
+	renderer_destroy_scene(&r);
 	//Uniform data
 	vkDestroyBuffer(r.device, r.uniform_buffer, NULL);
 	free_allocation(r.device, r.uniform_alloc);
@@ -1024,20 +1120,19 @@ void renderer_draw(struct Renderer* const r) {
 			create_swapchain(r, true);
 		}
 	}
-	//Record command buffer
-	record_commands(r, image_index);
+	record_blit_commands(r, r->command_buffers[1], image_index);
 	//Submit command buffer to queue
 	const VkPipelineStageFlagBits wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-	VkSubmitInfo submit_info = {
+	const VkSubmitInfo submit_info = {
 		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
 		1, &r->semaphores[0],
 		wait_stages,
-		1, &r->command_buffer,
+		2, r->command_buffers,
 		1, &r->semaphores[1]
 	};
 	vkQueueSubmit(r->graphics_queue, 1, &submit_info, NULL);
 	//Presentation
-	VkPresentInfoKHR present_info = {
+	const VkPresentInfoKHR present_info = {
 		VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, NULL,
 		1, &r->semaphores[1],
 		1, &r->swapchain,
@@ -1049,17 +1144,6 @@ void renderer_draw(struct Renderer* const r) {
 	//TODO: Frames-in-flight
 	vkQueueWaitIdle(r->present_queue);
 }
-
-struct LocalMesh {
-	unsigned vertex_offset;
-	unsigned vertex_count;
-	unsigned index_offset;
-	unsigned index_count;
-};
-
-struct LocalNode {
-	mat4 transformation;
-};
 
 void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	unsigned vertex_count = 0, index_count = 0;
@@ -1122,7 +1206,7 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 		draw_commands[i] = mesh_draw_commands[node.mesh];
 	}
 	free(mesh_draw_commands);
-	//Allocate scene buffers
+	//Allocate storage buffers
 	const VkBufferCreateInfo buffer_infos[] = {
 		//Vertex buffer
 		{
@@ -1170,10 +1254,10 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 		&r->device,
 		SCENE_BUFFER_COUNT, buffer_infos,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		r->scene_buffers,
-		&r->scene_alloc
+		r->storage_buffers,
+		&r->storage_alloc
 	);
-	//Write to scene buffers
+	//Write to storage buffers
 	const void* data[] = {vertices, indices, local_meshes, local_nodes, draw_commands};
 	const size_t sizes[] = {
 		buffer_infos[0].size, 
@@ -1185,9 +1269,9 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	staged_buffer_write(
 		&r->physical_device,
 		&r->device,
-		&r->command_buffer,
+		&r->command_buffers[2],
 		&r->graphics_queue,
-		SCENE_BUFFER_COUNT, r->scene_buffers, data, sizes
+		SCENE_BUFFER_COUNT, r->storage_buffers, data, sizes
 	);
 	//Cleanup
 	free(local_meshes);
@@ -1195,8 +1279,25 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	free(indices);
 	free(local_nodes);
 	free(draw_commands);
-	//Update descriptor
-	const VkDescriptorBufferInfo buffer_info = {r->scene_buffers[3], 0, VK_WHOLE_SIZE};
+	//Create staging buffer
+	const VkBufferCreateInfo staging_buffer_info = {
+		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
+		sizeof(mat4) + scene.node_count * sizeof(struct LocalNode),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_SHARING_MODE_EXCLUSIVE,
+		0, NULL
+	};
+	create_buffers(
+		&r->physical_device,
+		&r->device,
+		1, &staging_buffer_info,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+		| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&r->staging_buffer,
+		&r->staging_alloc
+	);
+	//Update descriptors
+	const VkDescriptorBufferInfo buffer_info = {r->storage_buffers[3], 0, VK_WHOLE_SIZE};
 	const VkWriteDescriptorSet descriptor_write = {
 		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL,
 		r->descriptor_set,
@@ -1209,34 +1310,55 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 		NULL
 	};
 	vkUpdateDescriptorSets(r->device, 1, &descriptor_write, 0, NULL);
-	r->draw_count = scene.node_count;
+	//Prime staging buffer
+	renderer_update_nodes(r, scene);
+	//Re-record draw commands
+	record_draw_commands(r, r->command_buffers[0], scene.node_count);
 }
 
+void renderer_destroy_scene(struct Renderer* const r) {
+	vkResetCommandBuffer(r->command_buffers[0], 0);
+	//Staging buffer
+	vkDestroyBuffer(r->device, r->staging_buffer, NULL);
+	free_allocation(r->device, r->staging_alloc);
+	//Storage buffers
+	for (unsigned i = 0; i < SCENE_BUFFER_COUNT; ++i)
+		vkDestroyBuffer(r->device, r->storage_buffers[i], NULL);
+	free_allocation(r->device, r->storage_alloc);
+}
+
+//Write camera matrix to staging buffer
 void renderer_update_camera(struct Renderer* const r, const struct Camera camera) {
-	//Write to uniform buffer
 	mat4 transformation;
 	camera_transform(camera, transformation);
-	const void* data[] = {transformation};
-	const size_t sizes[] = {sizeof(mat4)};
-	staged_buffer_write(
-		&r->physical_device,
-		&r->device,
-		&r->command_buffer,
-		&r->graphics_queue,
-		1, &r->uniform_buffer, data, sizes
+	void* data;
+	vkMapMemory(r->device, r->staging_alloc.memory, 0, sizeof(mat4), 0, &data);
+	memcpy(data, transformation, sizeof(mat4));
+	vkUnmapMemory(r->device, r->staging_alloc.memory);
+}
+
+//Write node transformations to staging buffer
+void renderer_update_nodes(struct Renderer* const r, const struct Scene scene) {
+	//Create local nodes
+	const size_t local_nodes_size = scene.node_count * sizeof(struct LocalNode);
+	struct LocalNode* const local_nodes = malloc(local_nodes_size);
+	for (unsigned i = 0; i < scene.node_count; ++i) {
+		struct Node node = scene.nodes[i];
+		struct LocalNode local_node;
+		glm_mat4_copy(node.transformation, local_node.transformation);
+		local_nodes[i] = local_node;
+	}
+	//Write to staging buffer
+	void* data;
+	vkMapMemory(
+		r->device,
+		r->staging_alloc.memory,
+		sizeof(mat4),
+		scene.node_count * sizeof(mat4),
+		0,
+		&data
 	);
-	//Update descriptor
-	const VkDescriptorBufferInfo buffer_info = {r->uniform_buffer, 0, VK_WHOLE_SIZE};
-	const VkWriteDescriptorSet descriptor_write = {
-		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL,
-		r->descriptor_set,
-		0,
-		0,
-		1,
-		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-		NULL,
-		&buffer_info,
-		NULL
-	};
-	vkUpdateDescriptorSets(r->device, 1, &descriptor_write, 0, NULL);
+	memcpy(data, local_nodes, local_nodes_size);
+	vkUnmapMemory(r->device, r->staging_alloc.memory);
+	free(local_nodes);
 }

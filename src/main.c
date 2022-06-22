@@ -50,7 +50,6 @@ int main() {
 	struct Renderer renderer;
 	create_renderer(window, &renderer);
 	struct Camera camera = create_camera();
-	renderer_update_camera(&renderer, camera);
 
 	//Scene
 	/*

@@ -6,6 +6,7 @@
 #include <SDL2/SDL.h>
 #include <vulkan/vulkan.h>
 
+#define COMMAND_BUFFER_COUNT 3
 #define SCENE_BUFFER_COUNT 5
 
 static const char* const PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
@@ -19,7 +20,13 @@ struct Renderer {
 	VkDevice device;
 	VkQueue graphics_queue, present_queue;
 	VkCommandPool command_pool;
-	VkCommandBuffer command_buffer;
+	/*
+		Command buffers:
+		1. Drawing
+		2. Blitting
+		3. Transfer
+	*/
+	VkCommandBuffer command_buffers[COMMAND_BUFFER_COUNT];
 	/*
 		Semaphores:
 		1. Acquire swapchain image
@@ -49,21 +56,30 @@ struct Renderer {
 	VkFramebuffer framebuffer;
 	VkPipeline pipeline;
 
-	//Uniform data
+	//Scene management
+	//Uniform buffer data
 	VkBuffer uniform_buffer;
 	struct Allocation uniform_alloc;
-	//Scene data
+	//Storage buffer data
 	/*
 		Scene buffers:
 		1. Vertices
 		2. Indices
 		3. Meshes
 		4. Nodes
-		5. Draw commands
+		5. Draw commands (one per node)
 	*/
-	VkBuffer scene_buffers[SCENE_BUFFER_COUNT];
-	unsigned draw_count;
-	struct Allocation scene_alloc;
+	VkBuffer storage_buffers[SCENE_BUFFER_COUNT];
+	struct Allocation storage_alloc;
+	//Staging buffer
+	/*
+		Staging buffer contents:
+		1. Camera matrix
+		2. Node transformations
+		This buffer is copied to the render buffers every draw call.
+	*/
+	VkBuffer staging_buffer;
+	struct Allocation staging_alloc;
 };
 
 //Renderer methods
@@ -73,4 +89,6 @@ VkResult renderer_create_resolution(struct Renderer* const, unsigned, unsigned);
 void renderer_destroy_resolution(struct Renderer* const);
 void renderer_draw(struct Renderer* const);
 void renderer_load_scene(struct Renderer* const, struct Scene);
+void renderer_destroy_scene(struct Renderer* const);
 void renderer_update_camera(struct Renderer* const, const struct Camera);
+void renderer_update_nodes(struct Renderer* const, const struct Scene);
