@@ -8,6 +8,9 @@
 #include <SDL2/SDL.h>
 #include <unistd.h>
 
+#define MICRO 1000000
+#define NANO 1000000000
+
 struct Inputs {
 	//Movement
 	bool move_forward, move_backward, move_left, move_right, move_up, move_down;
@@ -88,11 +91,18 @@ int main() {
 	//Main loop
 	bool running = true;
 	SDL_Event event;
-	clock_t start = clock();
+	struct timespec previous;
+	timespec_get(&previous, TIME_UTC);
+	const unsigned max_framerate = 200;
+	const float min_frame_time = 1.0f / max_framerate;
 	while (running) {
 		//Timing
-		float delta = (clock() - start) / (float) CLOCKS_PER_SEC;
-		start = clock();
+		struct timespec now;
+		timespec_get(&now, TIME_UTC);
+		const float delta = difftime(now.tv_sec, previous.tv_sec)
+			+ (float) now.tv_nsec / NANO
+			- (float) previous.tv_nsec / NANO; //Seconds since last frame
+		previous = now;
 		//Event handling
 		while (SDL_PollEvent(&event)) {
 			switch (event.type) {
@@ -210,10 +220,10 @@ int main() {
 		if (inputs.move_down)
 			glm_vec3_sub(movement, camera.up, movement);
 		glm_vec3_normalize(movement);
-		glm_vec3_scale(movement, 2*delta, movement);
+		glm_vec3_scale(movement, delta, movement);
 		glm_vec3_add(movement, camera.position, camera.position);
 		//Rotation
-		const float angular_velocity = 2; //Radians per second
+		const float angular_velocity = 1; //Radians per second
 		if (inputs.rotate_up)
 			glm_vec3_rotate(camera.direction, angular_velocity * delta, side);
 		if (inputs.rotate_down)
@@ -227,6 +237,7 @@ int main() {
 		if (shown && !minimized) {
 			renderer_update_camera(&renderer, camera);
 			renderer_draw(&renderer);
+			usleep(min_frame_time > delta ? (min_frame_time - delta) * MICRO : 0);
 		} else {
 			sleep(1);
 		}
