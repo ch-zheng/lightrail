@@ -184,6 +184,97 @@ static VkResult create_pipeline(struct Renderer* const r) {
 	return result;
 }
 
+static void record_blit_commands(
+	struct Renderer* const r,
+	VkCommandBuffer command_buffer,
+	unsigned image_index) {
+	const VkCommandBufferBeginInfo begin_info = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL, 0
+	};
+	vkBeginCommandBuffer(command_buffer, &begin_info);
+	//Blit render target to swapchain image
+	const VkImageSubresourceRange color_subresource_range = {
+		VK_IMAGE_ASPECT_COLOR_BIT,
+		0, 1,
+		0, 1
+	};
+	const VkImageMemoryBarrier image_barriers[] = {
+		//Render target
+		{
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			VK_ACCESS_TRANSFER_READ_BIT,
+			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			r->graphics_queue_family,
+			r->graphics_queue_family,
+			r->images[1],
+			color_subresource_range
+		},
+		//Swapchain image
+		{
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
+			0, //VK_ACCESS_NONE_KHR,
+			VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			r->graphics_queue_family,
+			r->graphics_queue_family,
+			r->swapchain_images[image_index],
+			color_subresource_range
+		},
+	};
+	vkCmdPipelineBarrier(
+		command_buffer,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, NULL,
+		0, NULL,
+		2, image_barriers
+	);
+	const VkImageSubresourceLayers subresource = {
+		VK_IMAGE_ASPECT_COLOR_BIT,
+		0, 0, 1
+	};
+	const VkImageBlit region = {
+		subresource,
+		{{0, 0, 0}, {r->resolution.width, r->resolution.height, 1}},
+		subresource,
+		{{0, 0, 0}, {r->surface_extent.width, r->surface_extent.height, 1}}
+	};
+	vkCmdBlitImage(
+		command_buffer,
+		r->images[1],
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		r->swapchain_images[image_index],
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1, &region,
+		VK_FILTER_NEAREST
+	);
+	const VkImageMemoryBarrier present_barrier = {
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
+		VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_ACCESS_HOST_READ_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		r->graphics_queue_family,
+		r->graphics_queue_family,
+		r->swapchain_images[image_index],
+		color_subresource_range
+	};
+	vkCmdPipelineBarrier(
+		command_buffer,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_HOST_BIT,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &present_barrier
+	);
+	vkEndCommandBuffer(command_buffer);
+}
+
 static bool create_swapchain(struct Renderer* const r, bool old) {
 	if (vkDeviceWaitIdle(r->device) != VK_SUCCESS) return true;
 
@@ -278,7 +369,31 @@ static bool create_swapchain(struct Renderer* const r, bool old) {
 		r->swapchain_images
 	);
 
+	//Blit command buffers
+	r->blit_command_buffers = malloc(r->swapchain_image_count * sizeof(VkCommandBuffer));
+	const VkCommandBufferAllocateInfo command_buffer_alloc_info = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, NULL,
+		r->blit_command_pool,
+		VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+		r->swapchain_image_count
+	};
+	vkAllocateCommandBuffers(r->device, &command_buffer_alloc_info, r->blit_command_buffers);
+	for (unsigned i = 0; i < r->swapchain_image_count; ++i)
+		record_blit_commands(r, r->blit_command_buffers[i], i);
+
 	return false;
+}
+
+static void destroy_swapchain(struct Renderer* const r, bool preserve) {
+	if (!preserve) vkDestroySwapchainKHR(r->device, r->swapchain, NULL);
+	free(r->swapchain_images);
+	vkFreeCommandBuffers(
+		r->device,
+		r->blit_command_pool,
+		r->swapchain_image_count,
+		r->blit_command_buffers
+	);
+	free(r->blit_command_buffers);
 }
 
 static void save_pipeline_cache(struct Renderer* const r) {
@@ -480,98 +595,6 @@ static void record_draw_commands(
 		sizeof(VkDrawIndexedIndirectCommand)
 	);
 	vkCmdEndRenderPass(command_buffer);
-	vkEndCommandBuffer(command_buffer);
-}
-
-static void record_blit_commands(
-	struct Renderer* const r,
-	VkCommandBuffer command_buffer,
-	unsigned image_index) {
-	const VkCommandBufferBeginInfo begin_info = {
-		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
-		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-	};
-	vkBeginCommandBuffer(command_buffer, &begin_info);
-	//Blit render target to swapchain image
-	const VkImageSubresourceRange color_subresource_range = {
-		VK_IMAGE_ASPECT_COLOR_BIT,
-		0, 1,
-		0, 1
-	};
-	const VkImageMemoryBarrier image_barriers[] = {
-		//Render target
-		{
-			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
-			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			VK_ACCESS_TRANSFER_READ_BIT,
-			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			r->graphics_queue_family,
-			r->graphics_queue_family,
-			r->images[1],
-			color_subresource_range
-		},
-		//Swapchain image
-		{
-			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
-			0, //VK_ACCESS_NONE_KHR,
-			VK_ACCESS_TRANSFER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			r->graphics_queue_family,
-			r->graphics_queue_family,
-			r->swapchain_images[image_index],
-			color_subresource_range
-		},
-	};
-	vkCmdPipelineBarrier(
-		command_buffer,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		0,
-		0, NULL,
-		0, NULL,
-		2, image_barriers
-	);
-	const VkImageSubresourceLayers subresource = {
-		VK_IMAGE_ASPECT_COLOR_BIT,
-		0, 0, 1
-	};
-	const VkImageBlit region = {
-		subresource,
-		{{0, 0, 0}, {r->resolution.width, r->resolution.height, 1}},
-		subresource,
-		{{0, 0, 0}, {r->surface_extent.width, r->surface_extent.height, 1}}
-	};
-	vkCmdBlitImage(
-		command_buffer,
-		r->images[1],
-		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		r->swapchain_images[image_index],
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		1, &region,
-		VK_FILTER_NEAREST
-	);
-	const VkImageMemoryBarrier present_barrier = {
-		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
-		VK_ACCESS_TRANSFER_WRITE_BIT,
-		VK_ACCESS_HOST_READ_BIT,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-		r->graphics_queue_family,
-		r->graphics_queue_family,
-		r->swapchain_images[image_index],
-		color_subresource_range
-	};
-	vkCmdPipelineBarrier(
-		command_buffer,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		VK_PIPELINE_STAGE_HOST_BIT,
-		0,
-		0, NULL,
-		0, NULL,
-		1, &present_barrier
-	);
 	vkEndCommandBuffer(command_buffer);
 }
 
@@ -788,6 +811,14 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	};
 	vkCreateCommandPool(r.device, &pool_info, NULL, &r.command_pool);
 
+	//Blit command pool
+	const VkCommandPoolCreateInfo blit_pool_info = {
+		VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, NULL, 0,
+		r.graphics_queue_family
+	};
+	vkCreateCommandPool(r.device, &blit_pool_info, NULL, &r.blit_command_pool);
+	r.blit_command_buffers = NULL;
+
 	//Command buffer allocation
 	const VkCommandBufferAllocateInfo command_buffer_alloc_info = {
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, NULL,
@@ -877,8 +908,8 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 	vkUpdateDescriptorSets(r.device, 1, &descriptor_write, 0, NULL);
 
 	//TODO: Multisampling
-	create_swapchain(&r, false);
 	renderer_create_resolution(&r, 1024, 1024); //TODO: Resolution setting
+	create_swapchain(&r, false);
 
 	*result = r;
 	return false;
@@ -892,15 +923,15 @@ void destroy_renderer(struct Renderer r) {
 	free_allocation(r.device, r.uniform_alloc);
 	//Vulkan objects
 	vkDestroyPipelineCache(r.device, r.pipeline_cache, NULL);
+	destroy_swapchain(&r, false);
 	renderer_destroy_resolution(&r);
-	vkDestroySwapchainKHR(r.device, r.swapchain, NULL);
-	free(r.swapchain_images);
 	vkDestroyDescriptorPool(r.device, r.descriptor_pool, NULL);
 	vkDestroyPipelineLayout(r.device, r.pipeline_layout, NULL);
 	vkDestroyDescriptorSetLayout(r.device, r.descriptor_set_layout, NULL);
 	for (unsigned i = 0; i < 2; ++i)
 		vkDestroySemaphore(r.device, r.semaphores[i], NULL);
 	vkDestroyCommandPool(r.device, r.command_pool, NULL);
+	vkDestroyCommandPool(r.device, r.blit_command_pool, NULL);
 	vkDestroyDevice(r.device, NULL);
 	vkDestroySurfaceKHR(r.instance, r.surface, NULL);
 	vkDestroyInstance(r.instance, NULL);
@@ -1117,17 +1148,21 @@ void renderer_draw(struct Renderer* const r) {
 		if (swapchain_status == VK_ERROR_OUT_OF_DATE_KHR) {
 			//Recreate swapchain
 			vkQueueWaitIdle(r->present_queue);
+			destroy_swapchain(r, true);
 			create_swapchain(r, true);
 		}
 	}
-	record_blit_commands(r, r->command_buffers[1], image_index);
 	//Submit command buffer to queue
 	const VkPipelineStageFlagBits wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+	const VkCommandBuffer command_buffers[] = {
+		r->command_buffers[0],
+		r->blit_command_buffers[image_index]
+	};
 	const VkSubmitInfo submit_info = {
 		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
 		1, &r->semaphores[0],
 		wait_stages,
-		2, r->command_buffers,
+		2, command_buffers,
 		1, &r->semaphores[1]
 	};
 	vkQueueSubmit(r->graphics_queue, 1, &submit_info, NULL);
@@ -1269,7 +1304,7 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	staged_buffer_write(
 		&r->physical_device,
 		&r->device,
-		&r->command_buffers[2],
+		&r->command_buffers[1],
 		&r->graphics_queue,
 		SCENE_BUFFER_COUNT, r->storage_buffers, data, sizes
 	);

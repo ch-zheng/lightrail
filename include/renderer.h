@@ -6,7 +6,7 @@
 #include <SDL2/SDL.h>
 #include <vulkan/vulkan.h>
 
-#define COMMAND_BUFFER_COUNT 3
+#define COMMAND_BUFFER_COUNT 2
 #define SCENE_BUFFER_COUNT 5
 
 static const char* const PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
@@ -23,8 +23,7 @@ struct Renderer {
 	/*
 		Command buffers:
 		1. Drawing
-		2. Blitting
-		3. Transfer
+		2. Transfer
 	*/
 	VkCommandBuffer command_buffers[COMMAND_BUFFER_COUNT];
 	/*
@@ -46,6 +45,8 @@ struct Renderer {
 	VkSwapchainKHR swapchain;
 	uint32_t swapchain_image_count;
 	VkImage* swapchain_images;
+	VkCommandPool blit_command_pool;
+	VkCommandBuffer* blit_command_buffers;
 
 	//Resolution-dependent structs
 	VkExtent2D resolution;
