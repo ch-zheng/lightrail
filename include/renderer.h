@@ -6,9 +6,6 @@
 #include <SDL2/SDL.h>
 #include <vulkan/vulkan.h>
 
-#define COMMAND_BUFFER_COUNT 2
-#define SCENE_BUFFER_COUNT 5
-
 static const char* const PIPELINE_CACHE_FILENAME = "pipeline-cache.bin";
 
 struct Renderer {
@@ -25,7 +22,7 @@ struct Renderer {
 		1. Drawing
 		2. Transfer
 	*/
-	VkCommandBuffer command_buffers[COMMAND_BUFFER_COUNT];
+	VkCommandBuffer command_buffers[2];
 	/*
 		Semaphores:
 		1. Acquire swapchain image
@@ -61,7 +58,7 @@ struct Renderer {
 	//Uniform buffer data
 	VkBuffer uniform_buffer;
 	struct Allocation uniform_alloc;
-	//Storage buffer data
+	//Scene buffers
 	/*
 		Scene buffers:
 		1. Vertices
@@ -70,8 +67,8 @@ struct Renderer {
 		4. Nodes
 		5. Draw commands (one per node)
 	*/
-	VkBuffer storage_buffers[SCENE_BUFFER_COUNT];
-	struct Allocation storage_alloc;
+	VkBuffer scene_buffers[5];
+	struct Allocation scene_alloc;
 	//Staging buffer
 	/*
 		Staging buffer contents:

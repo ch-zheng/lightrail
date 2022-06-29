@@ -78,10 +78,12 @@ int main() {
 		const float delta = difftime(now.tv_sec, previous.tv_sec)
 			+ (float) now.tv_nsec / NANO
 			- (float) previous.tv_nsec / NANO; //Seconds since last frame
+		/*
 		if (samples < total_samples) {
 			delta_sum += delta;
 			++samples;
 		} else break;
+		*/
 		previous = now;
 		//Event handling
 		while (SDL_PollEvent(&event)) {

@@ -189,21 +189,25 @@ static void record_blit_commands(
 	VkCommandBuffer command_buffer,
 	unsigned image_index) {
 	const VkCommandBufferBeginInfo begin_info = {
-		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL, 0
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
+		VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
 	};
 	vkBeginCommandBuffer(command_buffer, &begin_info);
 	//Blit render target to swapchain image
+	//Image memory barriers
 	const VkImageSubresourceRange color_subresource_range = {
 		VK_IMAGE_ASPECT_COLOR_BIT,
 		0, 1,
 		0, 1
 	};
-	const VkImageMemoryBarrier image_barriers[] = {
+	const VkImageMemoryBarrier2 blit_image_barriers[] = {
 		//Render target
 		{
-			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
-			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			VK_ACCESS_TRANSFER_READ_BIT,
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, NULL,
+			VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_BLIT_BIT,
+			VK_ACCESS_2_TRANSFER_READ_BIT,
 			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			r->graphics_queue_family,
@@ -213,34 +217,35 @@ static void record_blit_commands(
 		},
 		//Swapchain image
 		{
-			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
-			0, //VK_ACCESS_NONE_KHR,
-			VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, NULL,
+			VK_PIPELINE_STAGE_2_NONE,
+			VK_ACCESS_2_NONE,
+			VK_PIPELINE_STAGE_2_BLIT_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			r->graphics_queue_family,
+			r->present_queue_family,
 			r->graphics_queue_family,
 			r->swapchain_images[image_index],
 			color_subresource_range
-		},
+		}
 	};
-	vkCmdPipelineBarrier(
-		command_buffer,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		0,
+	const VkDependencyInfo blit_dependency = {
+		VK_STRUCTURE_TYPE_DEPENDENCY_INFO, NULL, 0,
 		0, NULL,
 		0, NULL,
-		2, image_barriers
-	);
-	const VkImageSubresourceLayers subresource = {
+		2, blit_image_barriers
+	};
+	vkCmdPipelineBarrier2(command_buffer, &blit_dependency);
+	//Blit operation
+	const VkImageSubresourceLayers blit_subresource = {
 		VK_IMAGE_ASPECT_COLOR_BIT,
 		0, 0, 1
 	};
-	const VkImageBlit region = {
-		subresource,
+	const VkImageBlit blit_region = {
+		blit_subresource,
 		{{0, 0, 0}, {r->resolution.width, r->resolution.height, 1}},
-		subresource,
+		blit_subresource,
 		{{0, 0, 0}, {r->surface_extent.width, r->surface_extent.height, 1}}
 	};
 	vkCmdBlitImage(
@@ -249,29 +254,30 @@ static void record_blit_commands(
 		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		r->swapchain_images[image_index],
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		1, &region,
+		1, &blit_region,
 		VK_FILTER_NEAREST
 	);
-	const VkImageMemoryBarrier present_barrier = {
-		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, NULL,
-		VK_ACCESS_TRANSFER_WRITE_BIT,
-		VK_ACCESS_HOST_READ_BIT,
+	//Transition swapchain image
+	const VkImageMemoryBarrier2 present_barrier = {
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, NULL,
+		VK_PIPELINE_STAGE_2_BLIT_BIT,
+		VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+		VK_ACCESS_2_MEMORY_READ_BIT,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 		r->graphics_queue_family,
-		r->graphics_queue_family,
+		r->present_queue_family,
 		r->swapchain_images[image_index],
 		color_subresource_range
 	};
-	vkCmdPipelineBarrier(
-		command_buffer,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		VK_PIPELINE_STAGE_HOST_BIT,
-		0,
+	const VkDependencyInfo present_dependency = {
+		VK_STRUCTURE_TYPE_DEPENDENCY_INFO, NULL, 0,
 		0, NULL,
 		0, NULL,
 		1, &present_barrier
-	);
+	};
+	vkCmdPipelineBarrier2(command_buffer, &present_dependency);
 	vkEndCommandBuffer(command_buffer);
 }
 
@@ -480,7 +486,8 @@ static void record_draw_commands(
 	VkCommandBuffer command_buffer,
 	unsigned draw_count) {
 	const VkCommandBufferBeginInfo begin_info = {
-		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL, 0
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
+		VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
 	};
 	vkBeginCommandBuffer(command_buffer, &begin_info);
 
@@ -509,7 +516,7 @@ static void record_draw_commands(
 	vkCmdCopyBuffer(command_buffer, r->staging_buffer, r->uniform_buffer, 1, &camera_region);
 	//Node transformations
 	const VkBufferCopy nodes_region = {sizeof(mat4), 0, draw_count * sizeof(mat4)};
-	vkCmdCopyBuffer(command_buffer, r->staging_buffer, r->storage_buffers[3], 1, &nodes_region);
+	vkCmdCopyBuffer(command_buffer, r->staging_buffer, r->scene_buffers[3], 1, &nodes_region);
 	//Memory barrier
 	const VkBufferMemoryBarrier2 shader_buffer_barriers[] = {
 		//Uniform buffer
@@ -533,7 +540,7 @@ static void record_draw_commands(
 			VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
 			r->graphics_queue_family,
 			r->graphics_queue_family,
-			r->storage_buffers[3],
+			r->scene_buffers[3],
 			0, VK_WHOLE_SIZE
 		}
 	};
@@ -578,18 +585,18 @@ static void record_draw_commands(
 	vkCmdBindVertexBuffers(
 		command_buffer,
 		0,
-		1, &r->storage_buffers[0], offsets
+		1, &r->scene_buffers[0], offsets
 	);
 	vkCmdBindIndexBuffer(
 		command_buffer,
-		r->storage_buffers[1],
+		r->scene_buffers[1],
 		0,
 		VK_INDEX_TYPE_UINT32
 	);
 	//Drawing
 	vkCmdDrawIndexedIndirect(
 		command_buffer,
-		r->storage_buffers[4],
+		r->scene_buffers[4],
 		0,
 		draw_count,
 		sizeof(VkDrawIndexedIndirectCommand)
@@ -824,7 +831,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, NULL,
 		r.command_pool,
 		VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-		COMMAND_BUFFER_COUNT
+		2
 	};
 	vkAllocateCommandBuffers(r.device, &command_buffer_alloc_info, r.command_buffers);
 
@@ -916,6 +923,7 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 }
 
 void destroy_renderer(struct Renderer r) {
+	vkDeviceWaitIdle(r.device);
 	save_pipeline_cache(&r);
 	renderer_destroy_scene(&r);
 	//Uniform data
@@ -1153,19 +1161,33 @@ void renderer_draw(struct Renderer* const r) {
 		}
 	}
 	//Submit command buffer to queue
-	const VkPipelineStageFlagBits wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-	const VkCommandBuffer command_buffers[] = {
-		r->command_buffers[0],
-		r->blit_command_buffers[image_index]
+	const VkSemaphoreSubmitInfo wait_semaphore = {
+		VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL,
+		r->semaphores[0],
+		0,
+		VK_PIPELINE_STAGE_2_BLIT_BIT,
+		0
 	};
-	const VkSubmitInfo submit_info = {
-		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
-		1, &r->semaphores[0],
-		wait_stages,
+	const VkCommandBufferSubmitInfo command_buffers[] = {
+		//Drawing
+		{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, NULL, r->command_buffers[0], 0},
+		//Blitting
+		{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, NULL, r->blit_command_buffers[image_index], 0}
+	};
+	const VkSemaphoreSubmitInfo signal_semaphore = {
+		VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, NULL,
+		r->semaphores[1],
+		0,
+		VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+		0
+	};
+	const VkSubmitInfo2 submit_info = {
+		VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0,
+		1, &wait_semaphore,
 		2, command_buffers,
-		1, &r->semaphores[1]
+		1, &signal_semaphore 
 	};
-	vkQueueSubmit(r->graphics_queue, 1, &submit_info, NULL);
+	vkQueueSubmit2(r->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
 	//Presentation
 	const VkPresentInfoKHR present_info = {
 		VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, NULL,
@@ -1175,9 +1197,7 @@ void renderer_draw(struct Renderer* const r) {
 		NULL
 	};
 	vkQueuePresentKHR(r->present_queue, &present_info);
-	//Wait
-	//TODO: Frames-in-flight
-	vkQueueWaitIdle(r->present_queue);
+	//vkQueueWaitIdle(r->present_queue);
 }
 
 void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
@@ -1287,10 +1307,10 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	create_buffers(
 		&r->physical_device,
 		&r->device,
-		SCENE_BUFFER_COUNT, buffer_infos,
+		5, buffer_infos,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		r->storage_buffers,
-		&r->storage_alloc
+		r->scene_buffers,
+		&r->scene_alloc
 	);
 	//Write to storage buffers
 	const void* data[] = {vertices, indices, local_meshes, local_nodes, draw_commands};
@@ -1306,7 +1326,7 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 		&r->device,
 		&r->command_buffers[1],
 		&r->graphics_queue,
-		SCENE_BUFFER_COUNT, r->storage_buffers, data, sizes
+		5, r->scene_buffers, data, sizes
 	);
 	//Cleanup
 	free(local_meshes);
@@ -1332,7 +1352,7 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 		&r->staging_alloc
 	);
 	//Update descriptors
-	const VkDescriptorBufferInfo buffer_info = {r->storage_buffers[3], 0, VK_WHOLE_SIZE};
+	const VkDescriptorBufferInfo buffer_info = {r->scene_buffers[3], 0, VK_WHOLE_SIZE};
 	const VkWriteDescriptorSet descriptor_write = {
 		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL,
 		r->descriptor_set,
@@ -1356,10 +1376,10 @@ void renderer_destroy_scene(struct Renderer* const r) {
 	//Staging buffer
 	vkDestroyBuffer(r->device, r->staging_buffer, NULL);
 	free_allocation(r->device, r->staging_alloc);
-	//Storage buffers
-	for (unsigned i = 0; i < SCENE_BUFFER_COUNT; ++i)
-		vkDestroyBuffer(r->device, r->storage_buffers[i], NULL);
-	free_allocation(r->device, r->storage_alloc);
+	//Scene buffers
+	for (unsigned i = 0; i < 5; ++i)
+		vkDestroyBuffer(r->device, r->scene_buffers[i], NULL);
+	free_allocation(r->device, r->scene_alloc);
 }
 
 //Write camera matrix to staging buffer
