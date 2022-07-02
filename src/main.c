@@ -205,7 +205,7 @@ int main() {
 		glm_vec3_scale(movement, delta, movement);
 		glm_vec3_add(movement, camera.position, camera.position);
 		//Rotation
-		const float angular_velocity = 1; //Radians per second
+		const float angular_velocity = 0.5; //Radians per second
 		if (inputs.rotate_up)
 			glm_vec3_rotate(camera.direction, angular_velocity * delta, side);
 		if (inputs.rotate_down)
@@ -218,15 +218,16 @@ int main() {
 		//Rendering
 		if (shown && !minimized) {
 			renderer_update_camera(&renderer, camera);
+			renderer_update_nodes(&renderer, scene);
 			renderer_draw(&renderer);
-			usleep(min_frame_time > delta ? (min_frame_time - delta) * MICRO : 0);
+			//usleep(min_frame_time > delta ? (min_frame_time - delta) * MICRO : 0);
 		} else {
 			sleep(1);
 		}
 	}
 
 	//Profiling report
-	printf("Average delta: %f over %u samples\n", delta_sum / total_samples, total_samples);
+	//printf("Average delta: %f over %u samples\n", delta_sum / total_samples, total_samples);
 
 	destroy_renderer(renderer);
 	//destroy_scene(scene);

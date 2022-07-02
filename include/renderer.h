@@ -17,74 +17,85 @@ struct Renderer {
 	VkDevice device;
 	VkQueue graphics_queue, present_queue;
 	VkCommandPool command_pool;
-	/*
-		Command buffers:
-		1. Drawing
-		2. Transfer
-	*/
-	VkCommandBuffer command_buffers[2];
-	/*
-		Semaphores:
-		1. Acquire swapchain image
-		2. Presentation
-	 */
-	VkSemaphore semaphores[2];
+	VkCommandBuffer transfer_command_buffer;
 	//Descriptors
 	VkDescriptorSetLayout descriptor_set_layout;
 	VkPipelineLayout pipeline_layout;
-	VkDescriptorPool descriptor_pool;
-	VkDescriptorSet descriptor_set;
 	//VkSampleCountFlagBits sample_count;
 	VkPipelineCache pipeline_cache;
+
+	//Resolution-dependent
+	VkExtent2D resolution;
+	VkRenderPass render_pass;
+	VkPipeline pipeline;
 
 	//Swapchain
 	VkExtent2D surface_extent;
 	VkSwapchainKHR swapchain;
 	uint32_t swapchain_image_count;
 	VkImage* swapchain_images;
-	VkCommandPool blit_command_pool;
-	VkCommandBuffer* blit_command_buffers;
 
-	//Resolution-dependent structs
-	VkExtent2D resolution;
-	VkImage images[3];
-	struct Allocation image_mem;
-	VkImageView image_views[3];
-	VkRenderPass render_pass;
-	VkFramebuffer framebuffer;
-	VkPipeline pipeline;
-
-	//Scene management
-	//Uniform buffer data
-	VkBuffer uniform_buffer;
-	struct Allocation uniform_alloc;
-	//Scene buffers
+	//Frames
+	unsigned current_frame;
+	unsigned frame_count;
+	//Framebuffers
 	/*
-		Scene buffers:
+		Images (per frame):
+		1. Color
+		2. Resolve
+		3. Depth
+	*/
+	VkImage* images;
+	struct Allocation image_alloc;
+	VkImageView* image_views;
+	VkFramebuffer* framebuffers;
+	//Rendering
+	VkCommandBuffer* command_buffers;
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet* descriptor_sets;
+	//Synchronization
+	/*
+		Semaphores (per frame):
+		1. Swapchain image acquired
+		2. Presentation
+	*/
+	VkSemaphore* semaphores;
+	VkFence* fences;
+	//Frame buffers
+	VkBuffer staging_buffer;
+	VkDeviceSize staging_size;
+	struct Allocation staging_alloc;
+	/*
+		Frame buffers (per frame):
+		1. Uniform
+		2. Storage
+	*/
+	VkBuffer* frame_buffers;
+	VkDeviceSize uniform_size, storage_size;
+	struct Allocation frame_buffer_alloc;
+
+	//Host-local dynamic scene data (size = staging_size)
+	/*
+		Contents:
+		1. Camera
+		2. Nodes
+	*/
+	void* restrict local_data;
+	//Static scene data
+	/*
 		1. Vertices
 		2. Indices
 		3. Meshes
-		4. Nodes
-		5. Draw commands (one per node)
+		4. Draw calls
 	*/
-	VkBuffer scene_buffers[5];
-	struct Allocation scene_alloc;
-	//Staging buffer
-	/*
-		Staging buffer contents:
-		1. Camera matrix
-		2. Node transformations
-		This buffer is copied to the render buffers every draw call.
-	*/
-	VkBuffer staging_buffer;
-	struct Allocation staging_alloc;
+	VkBuffer static_buffers[4];
+	struct Allocation static_alloc;
+	unsigned draw_count;
 };
 
 //Renderer methods
 bool create_renderer(SDL_Window*, struct Renderer* const);
 void destroy_renderer(struct Renderer);
-VkResult renderer_create_resolution(struct Renderer* const, unsigned, unsigned);
-void renderer_destroy_resolution(struct Renderer* const);
 void renderer_draw(struct Renderer* const);
 void renderer_load_scene(struct Renderer* const, struct Scene);
 void renderer_destroy_scene(struct Renderer* const);
