@@ -12,4 +12,6 @@ struct Camera {
 
 struct Camera create_camera();
 void camera_transform(struct Camera, mat4);
+void camera_view(struct Camera, mat4); //View matrix
+void camera_projection(struct Camera, mat4); //Projection matrix
 void camera_look(struct Camera*, vec3);

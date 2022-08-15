@@ -59,17 +59,12 @@ int main() {
 	load_scene("BarramundiFish.glb", &scene);
 	renderer_load_scene(&renderer, scene);
 
-	//Profiling
-	const unsigned total_samples = 2000;
-	unsigned samples = 0;
-	float delta_sum = 0;
-
 	//Main loop
 	bool running = true;
 	SDL_Event event;
 	struct timespec previous;
 	timespec_get(&previous, TIME_UTC);
-	const unsigned max_framerate = 500;
+	const unsigned max_framerate = 400;
 	const float min_frame_time = 1.0f / max_framerate;
 	while (running) {
 		//Timing
@@ -78,12 +73,6 @@ int main() {
 		const float delta = difftime(now.tv_sec, previous.tv_sec)
 			+ (float) now.tv_nsec / NANO
 			- (float) previous.tv_nsec / NANO; //Seconds since last frame
-		/*
-		if (samples < total_samples) {
-			delta_sum += delta;
-			++samples;
-		} else break;
-		*/
 		previous = now;
 		//Event handling
 		while (SDL_PollEvent(&event)) {
@@ -220,14 +209,11 @@ int main() {
 			renderer_update_camera(&renderer, camera);
 			renderer_update_nodes(&renderer, scene);
 			renderer_draw(&renderer);
-			//usleep(min_frame_time > delta ? (min_frame_time - delta) * MICRO : 0);
+			usleep(min_frame_time > delta ? (min_frame_time - delta) * MICRO : 0);
 		} else {
 			sleep(1);
 		}
 	}
-
-	//Profiling report
-	//printf("Average delta: %f over %u samples\n", delta_sum / total_samples, total_samples);
 
 	destroy_renderer(renderer);
 	//destroy_scene(scene);

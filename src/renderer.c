@@ -6,6 +6,10 @@
 
 #define REQUIRED_EXT_COUNT 2
 
+struct LocalCamera {
+	mat4 view, projection;
+};
+
 struct LocalMesh {
 	unsigned vertex_offset;
 	unsigned vertex_count;
@@ -105,8 +109,9 @@ static VkResult create_pipeline(struct Renderer* const r) {
 		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, NULL, 0,
 		false,
 		false,
-		VK_POLYGON_MODE_LINE, //VK_POLYGON_MODE_FILL,
-		0, //VK_CULL_MODE_BACK_BIT,
+		VK_POLYGON_MODE_FILL,
+		//VK_POLYGON_MODE_LINE,
+		VK_CULL_MODE_BACK_BIT,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		false,
 		0, 0, 0,
@@ -539,7 +544,6 @@ static void destroy_frame_data(struct Renderer* const r) {
 }
 
 static bool create_swapchain(struct Renderer* const r, bool old) {
-	printf("Swapchain created\n");
 	if (vkDeviceWaitIdle(r->device) != VK_SUCCESS) return true;
 	//Surface capabilities
 	VkSurfaceCapabilitiesKHR surface_capabilities;
@@ -591,7 +595,7 @@ static bool create_swapchain(struct Renderer* const r, bool old) {
 	VkSwapchainCreateInfoKHR swapchain_info = {
 		VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, NULL, 0,
 		r->surface,
-		surface_capabilities.minImageCount + 2, //Image count
+		4, //surface_capabilities.minImageCount + 2, //Image count
 		format.format,
 		format.colorSpace,
 		extent,
@@ -602,8 +606,8 @@ static bool create_swapchain(struct Renderer* const r, bool old) {
 		queue_family_indices,
 		surface_capabilities.currentTransform,
 		VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-		//VK_PRESENT_MODE_IMMEDIATE_KHR,
-		VK_PRESENT_MODE_FIFO_KHR,
+		VK_PRESENT_MODE_IMMEDIATE_KHR,
+		//VK_PRESENT_MODE_FIFO_KHR,
 		false,
 		old ? r->swapchain : NULL
 	};
@@ -1242,7 +1246,7 @@ void renderer_draw(struct Renderer* const r) {
 		0,
 		&staging_data
 	);
-	memcpy(staging_data, r->local_data, r->staging_size);
+	memcpy(staging_data, r->host_data, r->staging_size);
 	vkFlushMappedMemoryRanges(r->device, 1, &memory_range);
 	vkUnmapMemory(r->device, r->staging_alloc.memory);
 	//Record command buffer
@@ -1414,10 +1418,10 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	free(local_nodes);
 
 	//Create dynamic buffers
-	VkDeviceSize uniform_size = sizeof(mat4),
+	VkDeviceSize uniform_size = sizeof(struct LocalCamera),
 		storage_size = scene.node_count * sizeof(struct LocalNode),
 		staging_size = uniform_size + storage_size;
-	r->local_data = malloc(staging_size);
+	r->host_data = malloc(staging_size);
 	create_frame_data(r, staging_size, uniform_size, storage_size);
 	//Update descriptors
 	const unsigned descriptor_count = 2 * r->frame_count;
@@ -1468,16 +1472,17 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 void renderer_destroy_scene(struct Renderer* const r) {
 	vkQueueWaitIdle(r->graphics_queue);
 	destroy_frame_data(r);
-	free(r->local_data);
+	free(r->host_data);
 	for (unsigned i = 0; i < 4; ++i)
 		vkDestroyBuffer(r->device, r->static_buffers[i], NULL);
 	free_allocation(r->device, r->static_alloc);
 }
 
 void renderer_update_camera(struct Renderer* const r, const struct Camera camera) {
-	mat4 transformation;
-	camera_transform(camera, transformation);
-	memcpy(r->local_data, transformation, sizeof(mat4));
+	struct LocalCamera local_camera;
+	camera_view(camera, local_camera.view);
+	camera_projection(camera, local_camera.projection);
+	memcpy(r->host_data, &local_camera, sizeof(struct LocalCamera));
 }
 
 void renderer_update_nodes(struct Renderer* const r, const struct Scene scene) {
@@ -1491,6 +1496,6 @@ void renderer_update_nodes(struct Renderer* const r, const struct Scene scene) {
 		local_nodes[i] = local_node;
 	}
 	//Write to buffer
-	memcpy(r->local_data + sizeof(mat4), local_nodes, local_nodes_size);
+	memcpy(r->host_data + sizeof(struct LocalCamera), local_nodes, local_nodes_size);
 	free(local_nodes);
 }

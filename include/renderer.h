@@ -80,7 +80,7 @@ struct Renderer {
 		1. Camera
 		2. Nodes
 	*/
-	void* restrict local_data;
+	void* restrict host_data;
 	//Static scene data
 	/*
 		1. Vertices
