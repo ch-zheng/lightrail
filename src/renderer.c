@@ -5,6 +5,7 @@
 #include <cglm/mat4.h>
 
 #define REQUIRED_EXT_COUNT 2
+#define MAX_TEXTURE_COUNT 4
 
 struct LocalCamera {
 	mat4 view, projection;
@@ -70,18 +71,16 @@ static VkResult create_pipeline(struct Renderer* const r) {
 		sizeof(struct Vertex),
 		VK_VERTEX_INPUT_RATE_VERTEX
 	};
-	const VkVertexInputAttributeDescription attribute_descriptions[2] = {
-		//Position
-		{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct Vertex, pos)},
-		//Normal
-		{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct Vertex, normal)},
-		//Texture coords
-		//{2, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct Vertex, tex)},
+	const VkVertexInputAttributeDescription attribute_descriptions[] = {
+		{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct Vertex, pos)}, //Position
+		{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct Vertex, normal)}, //Normal
+		{2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(struct Vertex, tex)}, //Texture
+		{3, 0, VK_FORMAT_R32_UINT, offsetof(struct Vertex, material)} //Material
 	};
 	const VkPipelineVertexInputStateCreateInfo vertex_input = {
 		VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, NULL, 0,
 		1, &binding_description,
-		2, attribute_descriptions
+		4, attribute_descriptions
 	};
 	//Input assembly
 	const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
@@ -403,12 +402,14 @@ static void create_frames(struct Renderer* const r, unsigned frame_count) {
 	//Descriptor pool
 	const VkDescriptorPoolSize pool_sizes[] = {
 		{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frame_count},
-		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, frame_count}
+		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * frame_count},
+		{VK_DESCRIPTOR_TYPE_SAMPLER, frame_count},
+		{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_TEXTURE_COUNT * frame_count}
 	};
 	const VkDescriptorPoolCreateInfo descriptor_pool_info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, NULL, 0,
 		frame_count,
-		2, pool_sizes
+		4, pool_sizes
 	};
 	vkCreateDescriptorPool(r->device, &descriptor_pool_info, NULL, &r->descriptor_pool);
 	//Allocate descriptor sets
@@ -459,13 +460,12 @@ static void destroy_frames(struct Renderer* const r) {
 	for (unsigned i = 0; i < frame_count; ++i)
 		vkDestroyFramebuffer(r->device, r->framebuffers[i], NULL);
 	free(r->framebuffers);
-	//Image views
-	for (unsigned i = 0; i < 3 * frame_count; ++i)
+	//Images & image views
+	for (unsigned i = 0; i < 3 * frame_count; ++i) {
 		vkDestroyImageView(r->device, r->image_views[i], NULL);
-	free(r->image_views);
-	//Images
-	for (unsigned i = 0; i < 3 * frame_count; ++i)
 		vkDestroyImage(r->device, r->images[i], NULL);
+	}
+	free(r->image_views);
 	free(r->images);
 	free_allocation(r->device, r->image_alloc);
 }
@@ -719,6 +719,229 @@ static void staged_buffer_write(
 	free(offsets);
 	vkDestroyBuffer(*device, staging_buffer, NULL);
 	free_allocation(*device, staging_alloc);
+}
+
+static void copy_buffer_to_images(
+	//Vulkan objects
+	VkCommandBuffer const command_buffer,
+	VkQueue const queue,
+	unsigned queue_family, //FIXME: Redundant parameter
+	//Parameters
+	VkBuffer* const src_buffer,
+	const unsigned count,
+	VkImage* const images,
+	VkBufferImageCopy* const regions,
+	VkImageLayout layout) {
+	//Record command buffer
+	const VkCommandBufferBeginInfo begin_info = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
+		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	vkBeginCommandBuffer(command_buffer, &begin_info);
+	//Image layout transition
+	const VkImageSubresourceRange color_subresource_range = {
+		VK_IMAGE_ASPECT_COLOR_BIT,
+		0, 1,
+		0, 1
+	};
+	VkImageMemoryBarrier2* const before_image_barriers
+		= malloc(count * sizeof(VkImageMemoryBarrier2));
+	for (unsigned i = 0; i < count; ++i)
+		before_image_barriers[i] = (VkImageMemoryBarrier2) {
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, NULL,
+			VK_PIPELINE_STAGE_2_NONE,
+			VK_ACCESS_2_NONE,
+			VK_PIPELINE_STAGE_2_COPY_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			images[i],
+			color_subresource_range
+		};
+	const VkDependencyInfo before_copy_dependency = {
+		VK_STRUCTURE_TYPE_DEPENDENCY_INFO, NULL, 0,
+		0, NULL,
+		0, NULL,
+		count, before_image_barriers
+	};
+	vkCmdPipelineBarrier2(command_buffer, &before_copy_dependency);
+	//Image copy command
+	for (unsigned i = 0; i < count; ++i)
+		vkCmdCopyBufferToImage(
+			command_buffer,
+			*src_buffer,
+			images[i],
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1, regions + i
+		);
+	//Image layout transition
+	VkImageMemoryBarrier2* const after_image_barriers
+		= malloc(count * sizeof(VkImageMemoryBarrier2));
+	for (unsigned i = 0; i < count; ++i)
+		after_image_barriers[i] = (VkImageMemoryBarrier2) {
+			VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, NULL,
+			VK_PIPELINE_STAGE_2_COPY_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_NONE,
+			VK_ACCESS_2_NONE,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			layout,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			images[i],
+			color_subresource_range
+		};
+	const VkDependencyInfo after_copy_dependency = {
+		VK_STRUCTURE_TYPE_DEPENDENCY_INFO, NULL, 0,
+		0, NULL,
+		0, NULL,
+		count, after_image_barriers
+	};
+	vkCmdPipelineBarrier2(command_buffer, &after_copy_dependency);
+	vkEndCommandBuffer(command_buffer);
+	//Submit to queue
+	const VkCommandBufferSubmitInfo command_buffer_submit = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, NULL,
+		command_buffer,
+		0
+	};
+	const VkSubmitInfo2 submit_info = {
+		VK_STRUCTURE_TYPE_SUBMIT_INFO_2, NULL, 0,
+		0, NULL,
+		1, &command_buffer_submit,
+		0, NULL
+	};
+	vkQueueSubmit2(queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(queue); //TODO: Better synchronization
+	//Cleanup
+	free(before_image_barriers);
+	free(after_image_barriers);
+}
+
+static void write_textures_to_images(
+	//Vulkan objects
+	VkPhysicalDevice* const physical_device,
+	VkDevice* const device,
+	VkCommandBuffer const command_buffer,
+	VkQueue const queue,
+	unsigned queue_family,
+	//Parameters
+	unsigned count,
+	SDL_Surface** const textures,
+	VkImage* const images,
+	VkImageView* const image_views,
+	struct Allocation* const image_alloc
+) {
+	//Textures
+	VkImageCreateInfo* const image_create_infos = malloc(count * sizeof(VkImageCreateInfo));
+	VkBufferImageCopy* const regions = malloc(count * sizeof(VkBufferImageCopy));
+	unsigned buffer_size = 0;
+	const VkFormat format = VK_FORMAT_B8G8R8A8_SRGB;
+	for (unsigned i = 0; i < count; ++i) {
+		const SDL_Surface* texture = textures[i];
+		const VkExtent3D extent = {texture->w, texture->h, 1};
+		//Image create info
+		image_create_infos[i] = (VkImageCreateInfo) {
+			VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, NULL, 0,
+			VK_IMAGE_TYPE_2D,
+			format,
+			extent,
+			1,
+			1,
+			VK_SAMPLE_COUNT_1_BIT,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			VK_SHARING_MODE_EXCLUSIVE,
+			0, NULL,
+			VK_IMAGE_LAYOUT_UNDEFINED
+		};
+		//Region
+		regions[i] = (VkBufferImageCopy) {
+			buffer_size,
+			0,
+			0,
+			{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+			{0, 0, 0},
+			{texture->w, texture->h, 1}
+		};
+		buffer_size += texture->pitch * texture->h;
+	}
+	//Create staging buffer
+	VkBuffer buffer;
+	struct Allocation buffer_alloc;
+	const VkBufferCreateInfo texture_buffer_info = {
+		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
+		buffer_size,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_SHARING_MODE_EXCLUSIVE,
+		0, NULL
+	};
+	create_buffers(
+		physical_device,
+		device,
+		1,
+		&texture_buffer_info,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+		| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&buffer,
+		&buffer_alloc
+	);
+	//Write to staging buffer
+	void* buffer_data;
+	vkMapMemory(*device, buffer_alloc.memory, 0, buffer_size, 0, &buffer_data);
+	buffer_size = 0;
+	for (unsigned i = 0; i < count; ++i) {
+		const SDL_Surface* texture = textures[i];
+		const unsigned texture_size = texture->pitch * texture->h;
+		memcpy(buffer_data, texture->pixels, texture_size);
+		buffer_size += texture_size;
+	}
+	vkUnmapMemory(*device, buffer_alloc.memory);
+	//Create images
+	create_images(
+		physical_device,
+		device,
+		count, image_create_infos,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		images,
+		image_alloc
+	);
+	//Write to images
+	copy_buffer_to_images(
+		command_buffer,
+		queue,
+		queue_family,
+		&buffer,
+		count,
+		images,
+		regions,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	);
+	//Image views
+	const VkComponentMapping component_mapping = {
+		VK_COMPONENT_SWIZZLE_IDENTITY,
+		VK_COMPONENT_SWIZZLE_IDENTITY,
+		VK_COMPONENT_SWIZZLE_IDENTITY,
+		VK_COMPONENT_SWIZZLE_IDENTITY
+	};
+	for (unsigned i = 0; i < count; ++i) {
+		const VkImageViewCreateInfo image_view_info = {
+			VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, NULL, 0,
+			images[i],
+			VK_IMAGE_VIEW_TYPE_2D,
+			format,
+			component_mapping,
+			{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+		};
+		vkCreateImageView(*device, &image_view_info, NULL, image_views + i);
+	}
+	//Cleanup
+	free(image_create_infos);
+	free(regions);
+	vkDestroyBuffer(*device, buffer, NULL);
+	free_allocation(*device, buffer_alloc);
 }
 
 static void record_draw_commands(
@@ -1159,17 +1382,39 @@ bool create_renderer(SDL_Window* window, struct Renderer* const result) {
 		1
 	};
 	vkAllocateCommandBuffers(r.device, &command_buffer_alloc_info, &r.transfer_command_buffer);
+	
+	//Sampler
+	const VkSamplerCreateInfo sampler_info = {
+		VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, NULL, 0,
+		VK_FILTER_NEAREST,
+		VK_FILTER_NEAREST,
+		VK_SAMPLER_MIPMAP_MODE_NEAREST,
+		VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		0,
+		VK_FALSE,
+		0,
+		VK_FALSE,
+		VK_COMPARE_OP_NEVER,
+		0,
+		VK_LOD_CLAMP_NONE,
+		VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+		VK_FALSE
+	};
+	vkCreateSampler(r.device, &sampler_info, NULL, &r.sampler);
 
 	//Descriptor set layout
 	const VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[] = {
-		//Camera
-		{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, NULL},
-		//Nodes
-		{1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, NULL},
+		{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, NULL}, //Camera
+		{1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, NULL}, //Nodes
+		{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL}, //Materials
+		{3, VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, &r.sampler}, //Sampler
+		{4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_TEXTURE_COUNT, VK_SHADER_STAGE_FRAGMENT_BIT, NULL}, //Textures
 	};
 	const VkDescriptorSetLayoutCreateInfo descriptor_set_layout_info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, NULL, 0,
-		2, descriptor_set_layout_bindings
+		5, descriptor_set_layout_bindings
 	};
 	vkCreateDescriptorSetLayout(r.device, &descriptor_set_layout_info, NULL, &r.descriptor_set_layout);
 
@@ -1199,6 +1444,7 @@ void destroy_renderer(struct Renderer r) {
 	destroy_resolution(&r);
 	vkDestroyPipelineCache(r.device, r.pipeline_cache, NULL);
 	vkDestroyPipelineLayout(r.device, r.pipeline_layout, NULL);
+	vkDestroySampler(r.device, r.sampler, NULL);
 	vkDestroyDescriptorSetLayout(r.device, r.descriptor_set_layout, NULL);
 	vkDestroyCommandPool(r.device, r.command_pool, NULL);
 	vkDestroyDevice(r.device, NULL);
@@ -1287,7 +1533,7 @@ void renderer_draw(struct Renderer* const r) {
 		NULL
 	};
 	vkQueuePresentKHR(r->present_queue, &present_info);
-	//vkQueueWaitIdle(r->graphics_queue);
+	vkQueueWaitIdle(r->graphics_queue);
 }
 
 void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
@@ -1353,9 +1599,9 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	free(mesh_draw_commands);
 	r->draw_count = scene.node_count;
 
-	//Allocate static buffers
+	//Create static buffers
 	const VkBufferCreateInfo buffer_infos[] = {
-		//Vertex buffer
+		//Vertices
 		{
 			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
 			vertex_count * sizeof(struct Vertex),
@@ -1363,7 +1609,7 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 			VK_SHARING_MODE_EXCLUSIVE,
 			0, NULL
 		},
-		//Index buffer
+		//Indices
 		{
 			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
 			index_count * sizeof(unsigned),
@@ -1371,7 +1617,7 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 			VK_SHARING_MODE_EXCLUSIVE,
 			0, NULL
 		},
-		//Mesh buffer
+		//Meshes
 		{
 			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
 			scene.mesh_count * sizeof(struct LocalMesh),
@@ -1379,37 +1625,46 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 			VK_SHARING_MODE_EXCLUSIVE,
 			0, NULL
 		},
-		//Draw command buffer
+		//Draw commands
 		{
 			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
 			scene.node_count * sizeof(VkDrawIndexedIndirectCommand),
 			VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_SHARING_MODE_EXCLUSIVE,
 			0, NULL
-		}
+		},
+		//Materials
+		{
+			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
+			scene.material_count * sizeof(struct Material),
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_SHARING_MODE_EXCLUSIVE,
+			0, NULL
+		},
 	};
-	create_buffers(
+	if (create_buffers(
 		&r->physical_device,
 		&r->device,
-		4, buffer_infos,
+		5, buffer_infos,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		r->static_buffers,
 		&r->static_alloc
-	);
+	)) fprintf(stderr, "Error creating static scene buffers!\n");
 	//Write to static buffers
-	const void* data[] = {vertices, indices, local_meshes, draw_commands};
+	const void* data[] = {vertices, indices, local_meshes, draw_commands, scene.materials};
 	const size_t sizes[] = {
 		buffer_infos[0].size, 
 		buffer_infos[1].size, 
 		buffer_infos[2].size, 
 		buffer_infos[3].size,
+		buffer_infos[4].size
 	};
 	staged_buffer_write(
 		&r->physical_device,
 		&r->device,
 		&r->transfer_command_buffer,
 		&r->graphics_queue,
-		4, r->static_buffers, data, sizes
+		5, r->static_buffers, data, sizes
 	);
 	free(local_meshes);
 	free(vertices);
@@ -1417,14 +1672,50 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	free(draw_commands);
 	free(local_nodes);
 
+	//Textures
+	r->texture_count = scene.texture_count;
+	r->textures = malloc(scene.texture_count * sizeof(VkImage));
+	r->texture_views = malloc(scene.texture_count * sizeof(VkImageView));
+	write_textures_to_images(
+		&r->physical_device,
+		&r->device,
+		r->transfer_command_buffer,
+		r->graphics_queue,
+		r->graphics_queue_family,
+		scene.texture_count,
+		scene.textures,
+		r->textures,
+		r->texture_views,
+		&r->texture_alloc
+	);
+
 	//Create dynamic buffers
 	VkDeviceSize uniform_size = sizeof(struct LocalCamera),
 		storage_size = scene.node_count * sizeof(struct LocalNode),
 		staging_size = uniform_size + storage_size;
 	r->host_data = malloc(staging_size);
 	create_frame_data(r, staging_size, uniform_size, storage_size);
+
+	//Texture descriptor information
+	VkDescriptorImageInfo* const texture_descriptor_infos
+		= malloc(scene.texture_count * sizeof(VkDescriptorImageInfo));
+	for (unsigned i = 0; i < scene.texture_count; ++i)
+		texture_descriptor_infos[i] = (VkDescriptorImageInfo) {
+			VK_NULL_HANDLE,
+			r->texture_views[i],
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		};
+	/*
+	for (unsigned i = scene.texture_count; i < MAX_TEXTURE_COUNT; ++i) {
+		texture_descriptor_infos[i] = (VkDescriptorImageInfo) {
+			VK_NULL_HANDLE,
+			r->texture_views[0],
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		};
+	}
+	*/
 	//Update descriptors
-	const unsigned descriptor_count = 2 * r->frame_count;
+	const unsigned descriptor_count = 4 * r->frame_count;
 	VkWriteDescriptorSet* const descriptor_writes
 		= malloc(descriptor_count * sizeof(VkWriteDescriptorSet));
 	for (unsigned i = 0; i < r->frame_count; ++i) {
@@ -1434,7 +1725,7 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 			0,
 			VK_WHOLE_SIZE
 		};
-		const VkWriteDescriptorSet uniform_descriptor_write = {
+		descriptor_writes[4 * i] = (VkWriteDescriptorSet) {
 			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL,
 			r->descriptor_sets[i],
 			0, //Binding
@@ -1445,14 +1736,13 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 			&uniform_buffer_info,
 			NULL
 		};
-		descriptor_writes[2 * i] = uniform_descriptor_write;
-		//Storage buffer
-		const VkDescriptorBufferInfo storage_buffer_info = {
+		//Node buffer
+		const VkDescriptorBufferInfo node_buffer_info = {
 			r->frame_buffers[2 * i + 1],
 			0,
 			VK_WHOLE_SIZE
 		};
-		const VkWriteDescriptorSet storage_descriptor_write = {
+		descriptor_writes[4 * i + 1] = (VkWriteDescriptorSet) {
 			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL,
 			r->descriptor_sets[i],
 			1, //Binding
@@ -1460,22 +1750,62 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 			1,
 			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			NULL,
-			&storage_buffer_info,
+			&node_buffer_info,
 			NULL
 		};
-		descriptor_writes[2 * i + 1] = storage_descriptor_write;
+		//Material buffer
+		const VkDescriptorBufferInfo material_buffer_info = {
+			r->static_buffers[4],
+			0,
+			VK_WHOLE_SIZE
+		};
+		descriptor_writes[4 * i + 2] = (VkWriteDescriptorSet) {
+			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL,
+			r->descriptor_sets[i],
+			2, //Binding
+			0,
+			1,
+			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			NULL,
+			&material_buffer_info,
+			NULL
+		};
+		//Textures
+		descriptor_writes[4 * i + 3] = (VkWriteDescriptorSet) {
+			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL,
+			r->descriptor_sets[i],
+			4, //Binding
+			0,
+			MAX_TEXTURE_COUNT,
+			VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+			texture_descriptor_infos,
+			NULL,
+			NULL
+		};
 	}
 	vkUpdateDescriptorSets(r->device, descriptor_count, descriptor_writes, 0, NULL);
 	free(descriptor_writes);
+	free(texture_descriptor_infos);
 }
 
 void renderer_destroy_scene(struct Renderer* const r) {
+	printf("DESTROYING SCENE\n");
 	vkQueueWaitIdle(r->graphics_queue);
 	destroy_frame_data(r);
 	free(r->host_data);
-	for (unsigned i = 0; i < 4; ++i)
+	//Static buffers
+	for (unsigned i = 0; i < 5; ++i)
 		vkDestroyBuffer(r->device, r->static_buffers[i], NULL);
 	free_allocation(r->device, r->static_alloc);
+	//Textures
+	for (unsigned i = 0; i < r->texture_count; ++i) {
+		vkDestroyImageView(r->device, r->texture_views[i], NULL);
+		vkDestroyImage(r->device, r->textures[i], NULL);
+	}
+	free(r->textures);
+	free(r->texture_views);
+	free_allocation(r->device, r->texture_alloc);
+	printf("SCENE DESTROYED\n");
 }
 
 void renderer_update_camera(struct Renderer* const r, const struct Camera camera) {

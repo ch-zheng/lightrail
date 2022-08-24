@@ -35,6 +35,10 @@ int main() {
 		fprintf(stderr, "Error creating window: %s\n", SDL_GetError());
 		return 1;
 	}
+	if (!IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG)) {
+		fprintf(stderr, "Error initializing SDL_image\n");
+		return 1;
+	}
 
 	//Window flags
 	Uint32 window_flags = SDL_GetWindowFlags(window);
@@ -51,13 +55,19 @@ int main() {
 
 	//Renderer
 	struct Renderer renderer;
+	//printf("Creating renderer\n");
 	create_renderer(window, &renderer);
+	//printf("Created renderer\n");
 	struct Camera camera = create_camera();
 
 	//Scene
 	struct Scene scene;
+	//printf("Loading scene\n");
 	load_scene("BarramundiFish.glb", &scene);
+	//printf("Scene loaded\n");
+	//printf("Loading scene into renderer\n");
 	renderer_load_scene(&renderer, scene);
+	//printf("Loaded scene into renderer\n");
 
 	//Main loop
 	bool running = true;
@@ -215,6 +225,12 @@ int main() {
 		}
 	}
 
+	//Cleanup
+	//printf("Destroying renderer\n");
 	destroy_renderer(renderer);
+	//printf("Renderer destroyed\n");
 	//destroy_scene(scene);
+	IMG_Quit();
+	SDL_DestroyWindow(window);
+	SDL_Quit();
 }

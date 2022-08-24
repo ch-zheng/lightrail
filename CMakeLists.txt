@@ -5,6 +5,11 @@ project(Lightrail
 	LANGUAGES C
 )
 
+# Dependencies
+find_package(Vulkan REQUIRED)
+find_package(SDL2 REQUIRED)
+find_package(SDL2_image REQUIRED)
+
 # Shaders
 set(
 	SHADER_SOURCES
@@ -38,5 +43,11 @@ target_sources(
 	src/scene.c
 )
 add_dependencies(lightrail shaders)
-target_link_libraries(lightrail SDL2 vulkan cglm m)
+target_link_libraries(lightrail
+	${SDL2_LIBRARIES}
+	SDL2_image
+	${Vulkan_LIBRARIES}
+	cglm
+	m
+)
 target_precompile_headers(lightrail PRIVATE [["cgltf.h"]])

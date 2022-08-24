@@ -1,15 +1,30 @@
 #version 460
 
 //Inputs
-layout(location=0) in float in_shade;
+layout(location=0) in vec2 in_tex;
+layout(location=1) out uint in_material;
+layout(location=2) in float in_shade;
 
 //Descriptors
-//layout(set=0, binding=0) uniform sampler2D texSampler;
+struct Material {
+	vec4 base_color;
+	float metallic_factor;
+	float roughness_factor;
+	uint base_color_tex;
+	uint met_rgh_tex;
+	uint normal_tex;
+};
+layout(std140, set=0, binding=2) restrict readonly buffer MaterialBuffer {
+	Material materials[];
+};
+layout(set=0, binding=3) uniform sampler s;
+layout(set=0, binding=4) uniform texture2D textures[4];
 
 //Outputs
 layout(location=0) out vec4 out_color;
 
 void main() {
-	//out_color = texture(texSampler, in_texCoords.st);
-	out_color = in_shade * vec4(1.0, 0.0, 0.0, 1.0);
+	//const Material material = materials[in_material];
+	const vec4 s = texture(sampler2D(textures[1], s), in_tex); //FIXME: Indexed texture
+	out_color = s;
 }

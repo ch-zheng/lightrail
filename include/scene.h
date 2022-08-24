@@ -1,17 +1,19 @@
 #pragma once
+//#include <cglm/vec2.h>
 #include <cglm/vec3.h>
+#include <cglm/vec4.h>
 #include <cglm/mat4.h>
 #include <cglm/quat.h>
+#include <SDL2/SDL_image.h>
 #include <stdbool.h>
 
 struct Vertex {
-	float pos[3]; //Position
-	//Normal vectors
-	float normal[3]; //Normal vector
-	//float tangent[3]; //Tangent vector
-	//float bitangent[3]; //Bitangent vector
-	//float tex[2]; //Texture coordinates
-	//unsigned material;
+	vec3 pos; //Position
+	vec3 normal; //Normal vector
+	//vec3 tangent; //Tangent vector
+	//vec3 bitangent; //Bitangent vector
+	vec2 tex; //Texture coordinates
+	unsigned material;
 };
 
 struct Primitive {
@@ -45,30 +47,30 @@ struct Node {
 
 /*
 struct Light {
-	float pos[3];
-	float color[3];
+	vec3 pos;
+	vec3 color;
 	float radius;
 };
 */
 
-/*
 struct Material {
-	float base_color[3];
+	vec4 base_color;
 	float metallic_factor, roughness_factor;
-	unsigned base_color_tex, occ_met_rgh_tex, normal_tex;
+	unsigned base_color_tex, met_rgh_tex, normal_tex;
 };
-*/
 
 struct Scene {
 	unsigned mesh_count;
 	struct Mesh* meshes;
 	unsigned node_count;
 	struct Node* nodes;
+	unsigned material_count;
+	struct Material* materials;
+	unsigned texture_count;
+	SDL_Surface** textures;
 	/*
 	unsigned light_count;
 	struct Light* lights;
-	unsigned material_count;
-	struct Material* materials;
 	*/
 };
 

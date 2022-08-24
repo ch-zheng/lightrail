@@ -19,6 +19,7 @@ struct Renderer {
 	VkCommandPool command_pool;
 	VkCommandBuffer transfer_command_buffer;
 	//Descriptors
+	VkSampler sampler;
 	VkDescriptorSetLayout descriptor_set_layout;
 	VkPipelineLayout pipeline_layout;
 	//VkSampleCountFlagBits sample_count;
@@ -46,8 +47,8 @@ struct Renderer {
 		3. Depth
 	*/
 	VkImage* images;
-	struct Allocation image_alloc;
 	VkImageView* image_views;
+	struct Allocation image_alloc;
 	VkFramebuffer* framebuffers;
 	//Rendering
 	VkCommandBuffer* command_buffers;
@@ -87,9 +88,15 @@ struct Renderer {
 		2. Indices
 		3. Meshes
 		4. Draw calls
+		5. Materials (TODO: Move above draw calls)
 	*/
-	VkBuffer static_buffers[4];
+	VkBuffer static_buffers[5];
 	struct Allocation static_alloc;
+	//Textures
+	unsigned texture_count;
+	VkImage* textures;
+	VkImageView* texture_views;
+	struct Allocation texture_alloc;
 	unsigned draw_count;
 };
 

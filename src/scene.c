@@ -15,8 +15,48 @@ bool load_scene(const char* const filename, struct Scene* output) {
 			data->meshes_count,
 			malloc(data->meshes_count * sizeof(struct Mesh)),
 			data->nodes_count,
-			malloc(data->nodes_count * sizeof(struct Node))
+			malloc(data->nodes_count * sizeof(struct Node)),
+			data->materials_count,
+			malloc(data->materials_count * sizeof(struct Material)),
+			data->textures_count + 1,
+			malloc((data->textures_count + 1) * sizeof(SDL_Surface*))
 		};
+		//Default texture
+		SDL_PixelFormat* format = SDL_AllocFormat(SDL_PIXELFORMAT_ARGB32);
+		SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, 1, 1, format->BitsPerPixel, format->format);
+		const uint32_t color = SDL_MapRGBA(format, 0xFF, 0xFF, 0xFF, 0xFF);
+		SDL_FillRect(surface, NULL, color);
+		scene.textures[0] = surface;
+		//Load textures
+		for (unsigned i = 0; i < data->textures_count; ++i) {
+			const cgltf_texture texture = data->textures[i];
+			const cgltf_image image = *texture.image;
+			SDL_Surface* surface;
+			if (image.uri) surface = IMG_Load(image.uri);
+			else {
+				const cgltf_buffer_view buffer_view = *image.buffer_view;
+				SDL_RWops* buffer = SDL_RWFromConstMem(buffer_view.buffer->data + buffer_view.offset, buffer_view.size);
+				surface = IMG_Load_RW(buffer, true);
+			}
+			scene.textures[i+1] = SDL_ConvertSurface(surface, format, 0);
+			SDL_FreeSurface(surface);
+		}
+		SDL_FreeFormat(format);
+		//Load materials
+		for (unsigned i = 0; i < data->materials_count; ++i) {
+			const cgltf_material gltf_material = data->materials[i];
+			struct Material material = {{0, 0, 0}, 0, 0, 0, 0, 0};
+			if (gltf_material.has_pbr_metallic_roughness) {
+				const cgltf_pbr_metallic_roughness pbr = gltf_material.pbr_metallic_roughness;
+				memcpy(material.base_color, pbr.base_color_factor, sizeof(material.base_color));
+				material.metallic_factor = pbr.metallic_factor;
+				material.roughness_factor = pbr.roughness_factor;
+				material.base_color_tex = pbr.base_color_texture.texture - data->textures;
+				material.met_rgh_tex = pbr.metallic_roughness_texture.texture - data->textures;
+			}
+			material.normal_tex = gltf_material.normal_texture.texture - data->textures;
+			scene.materials[i] = material;
+		}
 		//Load meshes
 		for (unsigned i = 0; i < data->meshes_count; ++i) {
 			const cgltf_mesh gltf_mesh = data->meshes[i];
@@ -37,7 +77,7 @@ bool load_scene(const char* const filename, struct Scene* output) {
 				//Load vertices
 				const unsigned vertex_count = gltf_primitive.attributes[0].data->count;
 				primitive.vertex_count = vertex_count;
-				primitive.vertices = calloc(vertex_count, sizeof(struct Primitive));
+				primitive.vertices = calloc(vertex_count, sizeof(struct Vertex));
 				//Load vertex attributes
 				for (unsigned i = 0; i < gltf_primitive.attributes_count; ++i) {
 					const cgltf_attribute attribute = gltf_primitive.attributes[i];
@@ -66,11 +106,25 @@ bool load_scene(const char* const filename, struct Scene* output) {
 								}
 							}
 							break;
+						case cgltf_attribute_type_texcoord:
+							{
+								const unsigned components = 2;
+								for (unsigned i = 0; i < vertex_count; ++i) {
+									const unsigned offset = i * element_size;
+									for (unsigned j = 0; j < components; ++j)
+										primitive.vertices[i].tex[j] = buffer[offset + j];
+								}
+							}
+							break;
 						default:
 							break;
 					}
 					free(buffer);
 				}
+				//Set vertex material
+				const unsigned material = gltf_primitive.material - data->materials;
+				for (unsigned i = 0; i < vertex_count; ++i)
+					primitive.vertices[i].material = material;
 				mesh.primitives[i] = primitive;
 			}
 			scene.meshes[i] = mesh;
@@ -173,4 +227,8 @@ void destroy_scene(struct Scene scene) {
 	for (unsigned i = 0; i < scene.node_count; ++i)
 		destroy_node(scene.nodes + i);
 	free(scene.nodes);
+	free(scene.materials);
+	for (unsigned i = 0; i < scene.texture_count; ++i)
+		SDL_FreeSurface(scene.textures[i]);
+	free(scene.textures);
 }

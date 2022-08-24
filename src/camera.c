@@ -15,7 +15,7 @@ struct Camera create_camera() {
 		{0, -2, 0},
 		{0, 1, 0},
 		{0, 0, 1},
-		90, 1, 1, 64,
+		90, 1, 0.1, 64,
 		PERSPECTIVE
 	};
 	return camera;
