@@ -18,7 +18,7 @@ layout(std140, set=0, binding=2) restrict readonly buffer MaterialBuffer {
 	Material materials[];
 };
 layout(set=0, binding=3) uniform sampler s;
-layout(set=0, binding=4) uniform texture2D textures[4];
+layout(set=0, binding=4) uniform texture2D textures[8];
 
 //Outputs
 layout(location=0) out vec4 out_color;

@@ -5,7 +5,7 @@
 #include <cglm/mat4.h>
 
 #define REQUIRED_EXT_COUNT 2
-#define MAX_TEXTURE_COUNT 4
+#define MAX_TEXTURE_COUNT 8
 
 struct LocalCamera {
 	mat4 view, projection;
@@ -1698,14 +1698,13 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 
 	//Texture descriptor information
 	VkDescriptorImageInfo* const texture_descriptor_infos
-		= malloc(scene.texture_count * sizeof(VkDescriptorImageInfo));
+		= malloc(MAX_TEXTURE_COUNT * sizeof(VkDescriptorImageInfo));
 	for (unsigned i = 0; i < scene.texture_count; ++i)
 		texture_descriptor_infos[i] = (VkDescriptorImageInfo) {
 			VK_NULL_HANDLE,
 			r->texture_views[i],
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		};
-	/*
 	for (unsigned i = scene.texture_count; i < MAX_TEXTURE_COUNT; ++i) {
 		texture_descriptor_infos[i] = (VkDescriptorImageInfo) {
 			VK_NULL_HANDLE,
@@ -1713,7 +1712,6 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		};
 	}
-	*/
 	//Update descriptors
 	const unsigned descriptor_count = 4 * r->frame_count;
 	VkWriteDescriptorSet* const descriptor_writes
