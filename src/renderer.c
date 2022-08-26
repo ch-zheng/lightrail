@@ -871,7 +871,7 @@ static void write_textures_to_images(
 	//Create staging buffer
 	VkBuffer buffer;
 	struct Allocation buffer_alloc;
-	const VkBufferCreateInfo texture_buffer_info = {
+	const VkBufferCreateInfo buffer_info = {
 		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0,
 		buffer_size,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -882,7 +882,7 @@ static void write_textures_to_images(
 		physical_device,
 		device,
 		1,
-		&texture_buffer_info,
+		&buffer_info,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 		| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&buffer,
@@ -891,12 +891,11 @@ static void write_textures_to_images(
 	//Write to staging buffer
 	void* buffer_data;
 	vkMapMemory(*device, buffer_alloc.memory, 0, buffer_size, 0, &buffer_data);
-	buffer_size = 0;
 	for (unsigned i = 0; i < count; ++i) {
 		const SDL_Surface* texture = textures[i];
+		const VkBufferImageCopy region = regions[i];
 		const unsigned texture_size = texture->pitch * texture->h;
-		memcpy(buffer_data, texture->pixels, texture_size);
-		buffer_size += texture_size;
+		memcpy(buffer_data + region.bufferOffset, texture->pixels, texture_size);
 	}
 	vkUnmapMemory(*device, buffer_alloc.memory);
 	//Create images
@@ -1787,7 +1786,6 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 }
 
 void renderer_destroy_scene(struct Renderer* const r) {
-	printf("DESTROYING SCENE\n");
 	vkQueueWaitIdle(r->graphics_queue);
 	destroy_frame_data(r);
 	free(r->host_data);
@@ -1803,7 +1801,6 @@ void renderer_destroy_scene(struct Renderer* const r) {
 	free(r->textures);
 	free(r->texture_views);
 	free_allocation(r->device, r->texture_alloc);
-	printf("SCENE DESTROYED\n");
 }
 
 void renderer_update_camera(struct Renderer* const r, const struct Camera camera) {

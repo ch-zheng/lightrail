@@ -22,7 +22,7 @@ bool load_scene(const char* const filename, struct Scene* output) {
 			malloc((data->textures_count + 1) * sizeof(SDL_Surface*))
 		};
 		//Default texture
-		SDL_PixelFormat* format = SDL_AllocFormat(SDL_PIXELFORMAT_ARGB32);
+		SDL_PixelFormat* format = SDL_AllocFormat(SDL_PIXELFORMAT_BGRA32);
 		SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, 1, 1, format->BitsPerPixel, format->format);
 		const uint32_t color = SDL_MapRGBA(format, 0xFF, 0xFF, 0xFF, 0xFF);
 		SDL_FillRect(surface, NULL, color);
@@ -51,10 +51,10 @@ bool load_scene(const char* const filename, struct Scene* output) {
 				memcpy(material.base_color, pbr.base_color_factor, sizeof(material.base_color));
 				material.metallic_factor = pbr.metallic_factor;
 				material.roughness_factor = pbr.roughness_factor;
-				material.base_color_tex = pbr.base_color_texture.texture - data->textures;
-				material.met_rgh_tex = pbr.metallic_roughness_texture.texture - data->textures;
+				material.base_color_tex = pbr.base_color_texture.texture - data->textures + 1;
+				material.met_rgh_tex = pbr.metallic_roughness_texture.texture - data->textures + 1;
 			}
-			material.normal_tex = gltf_material.normal_texture.texture - data->textures;
+			material.normal_tex = gltf_material.normal_texture.texture - data->textures + 1;
 			scene.materials[i] = material;
 		}
 		//Load meshes
