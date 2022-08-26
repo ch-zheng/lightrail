@@ -326,8 +326,8 @@ static void create_frames(struct Renderer* const r, unsigned frame_count) {
 		memcpy(all_image_infos + 3 * i, image_infos, sizeof(image_infos));
 	r->images = malloc(3 * frame_count * sizeof(VkImage));
 	create_images(
-		&r->physical_device,
-		&r->device,
+		r->physical_device,
+		r->device,
 		3 * frame_count, all_image_infos,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		r->images,
@@ -472,9 +472,9 @@ static void destroy_frames(struct Renderer* const r) {
 
 static void create_frame_data(
 	struct Renderer* const r,
-	VkDeviceSize staging_size,
-	VkDeviceSize uniform_size,
-	VkDeviceSize storage_size) {
+	const VkDeviceSize staging_size,
+	const VkDeviceSize uniform_size,
+	const VkDeviceSize storage_size) {
 	//Set sizes
 	r->staging_size = staging_size;
 	r->uniform_size = uniform_size;
@@ -488,8 +488,8 @@ static void create_frame_data(
 		0, NULL
 	};
 	create_buffers(
-		&r->physical_device,
-		&r->device,
+		r->physical_device,
+		r->device,
 		1, &staging_buffer_info,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 		&r->staging_buffer,
@@ -522,8 +522,8 @@ static void create_frame_data(
 		memcpy(all_buffer_infos + 2 * i, buffer_infos, sizeof(buffer_infos));
 	r->frame_buffers = malloc(buffer_count * sizeof(VkBuffer));
 	create_buffers(
-		&r->physical_device,
-		&r->device,
+		r->physical_device,
+		r->device,
 		buffer_count, all_buffer_infos,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		r->frame_buffers,
@@ -655,10 +655,10 @@ static void save_pipeline_cache(struct Renderer* const r) {
 
 static void staged_buffer_write(
 	//Vulkan objects
-	VkPhysicalDevice* const physical_device,
-	VkDevice* const device,
-	VkCommandBuffer* const command_buffer,
-	VkQueue* const queue,
+	const VkPhysicalDevice physical_device,
+	const VkDevice device,
+	const VkCommandBuffer command_buffer,
+	const VkQueue queue,
 	//Parameters
 	const unsigned count,
 	VkBuffer* const dst_buffers,
@@ -691,47 +691,46 @@ static void staged_buffer_write(
 	//Write to staging buffer
 	void* buffer_data;
 	for (unsigned i = 0; i < count; ++i) {
-		vkMapMemory(*device, staging_alloc.memory, offsets[i], sizes[i], 0, &buffer_data);
+		vkMapMemory(device, staging_alloc.memory, offsets[i], sizes[i], 0, &buffer_data);
 		memcpy(buffer_data, data[i], sizes[i]);
-		vkUnmapMemory(*device, staging_alloc.memory);
+		vkUnmapMemory(device, staging_alloc.memory);
 	}
 	//Record commands for transfer
 	const VkCommandBufferBeginInfo begin_info = {
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
 		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
 	};
-	vkBeginCommandBuffer(*command_buffer, &begin_info);
+	vkBeginCommandBuffer(command_buffer, &begin_info);
 	for (unsigned i = 0; i < count; ++i) {
 		const VkBufferCopy region = {offsets[i], 0, sizes[i]};
-		vkCmdCopyBuffer(*command_buffer, staging_buffer, dst_buffers[i], 1, &region);
+		vkCmdCopyBuffer(command_buffer, staging_buffer, dst_buffers[i], 1, &region);
 	}
-	vkEndCommandBuffer(*command_buffer);
+	vkEndCommandBuffer(command_buffer);
 	//Submit to queue
 	const VkSubmitInfo submit_info = {
 		VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL,
 		0, NULL,
 		0,
-		1, command_buffer,
+		1, &command_buffer,
 		0, NULL
 	};
-	vkQueueSubmit(*queue, 1, &submit_info, VK_NULL_HANDLE);
-	vkQueueWaitIdle(*queue); //TODO: Better synchronization
+	vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(queue); //TODO: Better synchronization
 	free(offsets);
-	vkDestroyBuffer(*device, staging_buffer, NULL);
-	free_allocation(*device, staging_alloc);
+	vkDestroyBuffer(device, staging_buffer, NULL);
+	free_allocation(device, staging_alloc);
 }
 
 static void copy_buffer_to_images(
 	//Vulkan objects
-	VkCommandBuffer const command_buffer,
-	VkQueue const queue,
-	unsigned queue_family, //FIXME: Redundant parameter
+	const VkCommandBuffer command_buffer,
+	const VkQueue queue,
 	//Parameters
-	VkBuffer* const src_buffer,
+	const VkBuffer src_buffer,
 	const unsigned count,
 	VkImage* const images,
 	VkBufferImageCopy* const regions,
-	VkImageLayout layout) {
+	const VkImageLayout layout) {
 	//Record command buffer
 	const VkCommandBufferBeginInfo begin_info = {
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
@@ -771,7 +770,7 @@ static void copy_buffer_to_images(
 	for (unsigned i = 0; i < count; ++i)
 		vkCmdCopyBufferToImage(
 			command_buffer,
-			*src_buffer,
+			src_buffer,
 			images[i],
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1, regions + i
@@ -822,11 +821,10 @@ static void copy_buffer_to_images(
 
 static void write_textures_to_images(
 	//Vulkan objects
-	VkPhysicalDevice* const physical_device,
-	VkDevice* const device,
-	VkCommandBuffer const command_buffer,
-	VkQueue const queue,
-	unsigned queue_family,
+	const VkPhysicalDevice physical_device,
+	const VkDevice device,
+	const VkCommandBuffer command_buffer,
+	const VkQueue queue,
 	//Parameters
 	unsigned count,
 	SDL_Surface** const textures,
@@ -890,14 +888,14 @@ static void write_textures_to_images(
 	);
 	//Write to staging buffer
 	void* buffer_data;
-	vkMapMemory(*device, buffer_alloc.memory, 0, buffer_size, 0, &buffer_data);
+	vkMapMemory(device, buffer_alloc.memory, 0, buffer_size, 0, &buffer_data);
 	for (unsigned i = 0; i < count; ++i) {
 		const SDL_Surface* texture = textures[i];
 		const VkBufferImageCopy region = regions[i];
 		const unsigned texture_size = texture->pitch * texture->h;
 		memcpy(buffer_data + region.bufferOffset, texture->pixels, texture_size);
 	}
-	vkUnmapMemory(*device, buffer_alloc.memory);
+	vkUnmapMemory(device, buffer_alloc.memory);
 	//Create images
 	create_images(
 		physical_device,
@@ -911,8 +909,7 @@ static void write_textures_to_images(
 	copy_buffer_to_images(
 		command_buffer,
 		queue,
-		queue_family,
-		&buffer,
+		buffer,
 		count,
 		images,
 		regions,
@@ -934,13 +931,13 @@ static void write_textures_to_images(
 			component_mapping,
 			{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
 		};
-		vkCreateImageView(*device, &image_view_info, NULL, image_views + i);
+		vkCreateImageView(device, &image_view_info, NULL, image_views + i);
 	}
 	//Cleanup
 	free(image_create_infos);
 	free(regions);
-	vkDestroyBuffer(*device, buffer, NULL);
-	free_allocation(*device, buffer_alloc);
+	vkDestroyBuffer(device, buffer, NULL);
+	free_allocation(device, buffer_alloc);
 }
 
 static void record_draw_commands(
@@ -1642,8 +1639,8 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 		},
 	};
 	if (create_buffers(
-		&r->physical_device,
-		&r->device,
+		r->physical_device,
+		r->device,
 		5, buffer_infos,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		r->static_buffers,
@@ -1659,10 +1656,10 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 		buffer_infos[4].size
 	};
 	staged_buffer_write(
-		&r->physical_device,
-		&r->device,
-		&r->transfer_command_buffer,
-		&r->graphics_queue,
+		r->physical_device,
+		r->device,
+		r->transfer_command_buffer,
+		r->graphics_queue,
 		5, r->static_buffers, data, sizes
 	);
 	free(local_meshes);
@@ -1676,11 +1673,10 @@ void renderer_load_scene(struct Renderer* const r, struct Scene scene) {
 	r->textures = malloc(scene.texture_count * sizeof(VkImage));
 	r->texture_views = malloc(scene.texture_count * sizeof(VkImageView));
 	write_textures_to_images(
-		&r->physical_device,
-		&r->device,
+		r->physical_device,
+		r->device,
 		r->transfer_command_buffer,
 		r->graphics_queue,
-		r->graphics_queue_family,
 		scene.texture_count,
 		scene.textures,
 		r->textures,

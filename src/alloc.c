@@ -5,8 +5,8 @@
 
 //Note: Do not put buffers & images in the same allocation
 VkResult create_allocation(
-	VkPhysicalDevice* const physical_device,
-	VkDevice* const device,
+	const VkPhysicalDevice physical_device,
+	const VkDevice device,
 	const VkMemoryPropertyFlags props,
 	const unsigned count,
 	const VkMemoryRequirements* const reqs,
@@ -30,7 +30,7 @@ VkResult create_allocation(
 	unsigned mem_type;
 	bool success = false;
 	VkPhysicalDeviceMemoryProperties mem_props;
-	vkGetPhysicalDeviceMemoryProperties(*physical_device, &mem_props);
+	vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_props);
 	for (unsigned i = 0; i < mem_props.memoryTypeCount; ++i) {
 		VkMemoryType type = mem_props.memoryTypes[i];
 		bool supported = (supported_mem_types >> i) & 1;
@@ -56,13 +56,13 @@ VkResult create_allocation(
 		alloc_size,
 		mem_type
 	};
-	VkResult result = vkAllocateMemory(*device, &alloc_info, NULL, &alloc->memory);
+	VkResult result = vkAllocateMemory(device, &alloc_info, NULL, &alloc->memory);
 	return result;
 }
 
 VkResult create_buffers(
-	VkPhysicalDevice* const physical_device,
-	VkDevice* const device,
+	const VkPhysicalDevice physical_device,
+	const VkDevice device,
 	const unsigned count,
 	const VkBufferCreateInfo* const create_infos,
 	const VkMemoryPropertyFlags props,
@@ -72,12 +72,12 @@ VkResult create_buffers(
 	//Create buffers
 	VkMemoryRequirements* const reqs = malloc(count * sizeof(VkMemoryRequirements));
 	for (unsigned i = 0; i < count; ++i) {
-		result = vkCreateBuffer(*device, create_infos + i, NULL, buffers + i);
+		result = vkCreateBuffer(device, create_infos + i, NULL, buffers + i);
 		if (result) {
 			free(reqs);
 			return result;
 		}
-		vkGetBufferMemoryRequirements(*device, buffers[i], reqs + i);
+		vkGetBufferMemoryRequirements(device, buffers[i], reqs + i);
 	}
 	//Allocate memory
 	result = create_allocation(
@@ -97,14 +97,14 @@ VkResult create_buffers(
 			alloc->memory,
 			alloc->offsets[i]
 		};
-	result = vkBindBufferMemory2(*device, count, bind_infos);
+	result = vkBindBufferMemory2(device, count, bind_infos);
 	free(bind_infos);
 	return result;
 }
 
 VkResult create_images(
-	VkPhysicalDevice* const physical_device,
-	VkDevice* const device,
+	const VkPhysicalDevice physical_device,
+	const VkDevice device,
 	const unsigned count,
 	const VkImageCreateInfo* const create_infos,
 	const VkMemoryPropertyFlags props,
@@ -114,12 +114,12 @@ VkResult create_images(
 	//Create images
 	VkMemoryRequirements* const reqs = malloc(count * sizeof(VkMemoryRequirements));
 	for (unsigned i = 0; i < count; ++i) {
-		result = vkCreateImage(*device, create_infos + i, NULL, images + i);
+		result = vkCreateImage(device, create_infos + i, NULL, images + i);
 		if (result) {
 			free(reqs);
 			return result;
 		}
-		vkGetImageMemoryRequirements(*device, images[i], reqs + i);
+		vkGetImageMemoryRequirements(device, images[i], reqs + i);
 	}
 	//Allocate memory
 	result = create_allocation(
@@ -139,7 +139,7 @@ VkResult create_images(
 			alloc->memory,
 			alloc->offsets[i]
 		};
-	result = vkBindImageMemory2(*device, count, bind_infos);
+	result = vkBindImageMemory2(device, count, bind_infos);
 	free(bind_infos);
 	return result;
 }

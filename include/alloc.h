@@ -8,8 +8,8 @@ struct Allocation {
 };
 
 VkResult create_allocation(
-	VkPhysicalDevice* const,
-	VkDevice* const,
+	const VkPhysicalDevice,
+	const VkDevice,
 	const VkMemoryPropertyFlags uint32_t,
 	const unsigned,
 	const VkMemoryRequirements* const,
@@ -17,8 +17,8 @@ VkResult create_allocation(
 );
 
 VkResult create_buffers(
-	VkPhysicalDevice* const,
-	VkDevice* const,
+	const VkPhysicalDevice,
+	const VkDevice,
 	const unsigned,
 	const VkBufferCreateInfo* const,
 	const VkMemoryPropertyFlags,
@@ -27,8 +27,8 @@ VkResult create_buffers(
 );
 
 VkResult create_images(
-	VkPhysicalDevice* const,
-	VkDevice* const,
+	const VkPhysicalDevice,
+	const VkDevice,
 	const unsigned,
 	const VkImageCreateInfo* const,
 	const VkMemoryPropertyFlags,

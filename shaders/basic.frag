@@ -24,7 +24,7 @@ layout(set=0, binding=4) uniform texture2D textures[8];
 layout(location=0) out vec4 out_color;
 
 void main() {
-	//const Material material = materials[in_material];
-	const vec4 s = texture(sampler2D(textures[3], s), in_tex); //FIXME: Indexed texture
-	out_color = s;
+	const Material material = materials[in_material];
+	const vec4 s = texture(sampler2D(textures[material.base_color_tex], s), in_tex);
+	out_color = material.base_color * s;
 }
